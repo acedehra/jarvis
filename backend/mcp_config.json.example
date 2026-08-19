@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "homeassistant": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-homeassistant"
+      ],
+      "env": {
+        "HASS_URL": "http://192.168.1.100:8123",
+        "HASS_TOKEN": "your_long_lived_access_token_here"
+      }
+    },
+    "everything": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-everything"
+      ]
+    },
+    "weather": {
+      "url": "http://localhost:8000/sse"
+    }
+  }
+}
