@@ -67,3 +67,7 @@ Thumbs.db
 *.swo
 *.pem
 *.key
+
+# VitePress
+docs/.vitepress/dist/
+docs/.vitepress/cache/

@@ -7,8 +7,10 @@
 [![Next.js 16](https://img.shields.io/badge/Frontend-Next.js%2016-black.svg?logo=next.js)](https://nextjs.org/)
 [![PostgreSQL](https://img.shields.io/badge/Storage-PostgreSQL%20%2B%20pgvector-336791.svg?logo=postgresql)](https://www.postgresql.org/)
 [![Model Context Protocol](https://img.shields.io/badge/Protocol-MCP-8A2BE2.svg)](https://modelcontextprotocol.io/)
+[![Docs](https://img.shields.io/badge/Docs-VitePress-06b6d4.svg?logo=vite)](https://acedehra.github.io/jarvis/)
 
 A full-stack, autonomous personal assistant and agentic AI system engineered with **LangGraph**, **FastAPI**, **Next.js**, and **PostgreSQL**. Demonstrates production AI system design including **Model Context Protocol (MCP)** dynamic runtime integration, **Human-in-the-Loop (HITL)** approval workflows, **dual-layer memory architectures**, and **deterministic SQL analytics offloading**.
+
 
 ---
 
@@ -165,7 +167,13 @@ bun run dev
 │   ├── Dockerfile
 │   ├── package.json              # Bun packages
 │   └── README.md                 # Frontend technical guide
-├── .github/workflows/            # CI/CD Workflows (Docker GHCR Publish)
+├── docs/                         # VitePress Documentation (GitHub Pages)
+│   ├── .vitepress/               # Config, theme & navigation
+│   ├── guide/                    # Quickstart, architecture, config
+│   ├── core/                     # LangGraph, Memory, MCP, HITL
+│   ├── integrations/             # Telegram, Web, Calendar
+│   └── roadmap/                  # J.A.R.V.I.S. 2.0 Feature Strategy
+├── .github/workflows/            # CI/CD Workflows (Docker & Docs Pages Deploy)
 ├── docker-compose.yml            # Local development compose
 ├── docker-compose.prod.yml       # Production multi-container compose
 ├── LICENSE                       # MIT Open Source License
