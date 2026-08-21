@@ -4,6 +4,9 @@
 !.env.example
 .api_key
 mcp_config.json
+backend/data/*
+!backend/data/.gitkeep
+
 
 # Python
 __pycache__/

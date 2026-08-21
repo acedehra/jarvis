@@ -63,6 +63,12 @@ def init_api_key() -> Optional[str]:
 
     # 2. Check if persisted key file exists
     key_file = get_key_file_path()
+    if not key_file.exists():
+        # Fallback check for legacy root .api_key
+        legacy_file = Path(__file__).resolve().parent.parent.parent / ".api_key"
+        if legacy_file.exists():
+            key_file = legacy_file
+
     if key_file.exists():
         try:
             saved_key = key_file.read_text(encoding="utf-8").strip()

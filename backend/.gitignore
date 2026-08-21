@@ -16,3 +16,6 @@ wheels/
 .api_key
 *.key
 mcp_config.json
+data/*
+!data/.gitkeep
+
