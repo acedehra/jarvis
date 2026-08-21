@@ -18,6 +18,7 @@ import {
   Layers,
   Key
 } from "lucide-react";
+import { authFetch } from "../utils/auth";
 
 interface McpToolInfo {
   name: string;
@@ -72,7 +73,7 @@ export default function McpManagementModal({
   const fetchServers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/mcp/servers`);
+      const res = await authFetch(`${apiBaseUrl}/api/mcp/servers`);
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       if (data.status === "success") {
@@ -134,7 +135,7 @@ export default function McpManagementModal({
 
     setActionLoading("add");
     try {
-      const res = await fetch(`${apiBaseUrl}/api/mcp/servers`, {
+      const res = await authFetch(`${apiBaseUrl}/api/mcp/servers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -162,7 +163,7 @@ export default function McpManagementModal({
     if (!confirm(`Are you sure you want to remove MCP server '${name}'?`)) return;
     setActionLoading(`delete_${name}`);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/mcp/servers/${name}`, {
+      const res = await authFetch(`${apiBaseUrl}/api/mcp/servers/${name}`, {
         method: "DELETE"
       });
       if (!res.ok) {
@@ -180,7 +181,7 @@ export default function McpManagementModal({
   const handleReconnectServer = async (name: string) => {
     setActionLoading(`reconnect_${name}`);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/mcp/servers/${name}/reconnect`, {
+      const res = await authFetch(`${apiBaseUrl}/api/mcp/servers/${name}/reconnect`, {
         method: "POST"
       });
       if (!res.ok) {

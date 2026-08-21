@@ -62,6 +62,7 @@ backend/
 │   │   ├── telegram_routes.py    # Telegram bot health and test dispatch
 │   │   └── tracker_routes.py     # Universal structured tracker CRUD & aggregations
 │   ├── core/                     # Application Core
+│   │   ├── auth.py               # Key authentication, first-run generation & security dependencies
 │   │   ├── config.py             # Pydantic BaseSettings and env configuration
 │   │   └── database.py           # AsyncConnectionPool, Checkpointer & Store proxies
 │   ├── services/                 # Domain Services & AI Logic
@@ -139,9 +140,25 @@ Interactive API documentation available at:
 
 ---
 
+## 🔐 API Key Authentication
+
+All endpoints under `/api/*` and WebSocket connections require API key authentication.
+
+### Authentication Methods
+Clients can supply the key via:
+1. **HTTP Header**: `X-API-Key: <your_key>`
+2. **Authorization Header**: `Authorization: Bearer <your_key>`
+3. **Query Parameter**: `?api_key=<your_key>` (e.g. `/api/chat?session_id=...&api_key=...`)
+
+### Key Lifecycle & Configuration
+- **Pre-configured**: Set `API_KEY=your_secret_key` in `.env`.
+- **First Run Auto-Generation**: If `API_KEY` is omitted, the backend generates a secure 256-bit key (`jarvis_sec_...`), persists it to `.api_key` (with `0600` permissions), and prints the key **once** on the console. Subsequent runs load `.api_key` silently.
+
+---
+
 ## 📡 API & WebSocket Reference
 
-### WebSocket Protocol (`/api/chat?session_id={uuid}`)
+### WebSocket Protocol (`/api/chat?session_id={uuid}&api_key={key}`)
 
 The primary chat interface operates over WebSockets for bi-directional token streaming and interrupt handling.
 

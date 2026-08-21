@@ -9,5 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
-# User configurations
+# User configurations and secrets
+.env
+.env.*
+!.env.example
+.api_key
+*.key
 mcp_config.json

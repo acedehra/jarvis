@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.api_key
 mcp_config.json
 
 # Python

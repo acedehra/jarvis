@@ -27,6 +27,7 @@ import {
   Gauge,
   Car,
 } from "lucide-react";
+import { authFetch } from "../utils/auth";
 
 export interface TrackerItem {
   id: string;
@@ -121,7 +122,7 @@ export default function TrackerModal({
 
   const fetchCollections = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBaseUrl}/api/tracker/collections`);
+      const res = await authFetch(`${apiBaseUrl}/api/tracker/collections`);
       if (res.ok) {
         const data = await res.json();
         setCollections(data.collections || []);
@@ -134,7 +135,7 @@ export default function TrackerModal({
   const fetchAnalytics = useCallback(async () => {
     try {
       // 1. Fetch expense aggregation
-      const expenseRes = await fetch(
+      const expenseRes = await authFetch(
         `${apiBaseUrl}/api/tracker/aggregate?collection=expense&calculation=sum&field=amount&group_by=category`
       );
       if (expenseRes.ok) {
@@ -146,7 +147,7 @@ export default function TrackerModal({
       }
 
       // 2. Fetch todo aggregation
-      const todoPendingRes = await fetch(
+      const todoPendingRes = await authFetch(
         `${apiBaseUrl}/api/tracker/records?collection=todo&limit=200`
       );
       if (todoPendingRes.ok) {
@@ -159,7 +160,7 @@ export default function TrackerModal({
       }
 
       // 3. Fetch reminders count
-      const reminderRes = await fetch(
+      const reminderRes = await authFetch(
         `${apiBaseUrl}/api/tracker/records?collection=reminder&limit=200`
       );
       if (reminderRes.ok) {
@@ -170,7 +171,7 @@ export default function TrackerModal({
       }
 
       // 4. Fetch gas analytics
-      const gasRes = await fetch(`${apiBaseUrl}/api/tracker/gas-analytics`);
+      const gasRes = await authFetch(`${apiBaseUrl}/api/tracker/gas-analytics`);
       if (gasRes.ok) {
         const gasData = await gasRes.json();
         setGasAnalytics(gasData.analytics || null);
@@ -195,7 +196,7 @@ export default function TrackerModal({
         url += `&date_from=${encodeURIComponent(date_from)}`;
       }
 
-      const res = await fetch(url);
+      const res = await authFetch(url);
       if (res.ok) {
         const data = await res.json();
         setRecords(data.records || []);
@@ -270,7 +271,7 @@ export default function TrackerModal({
         user_id: "default_user",
       };
 
-      const res = await fetch(`${apiBaseUrl}/api/tracker/records`, {
+      const res = await authFetch(`${apiBaseUrl}/api/tracker/records`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -309,7 +310,7 @@ export default function TrackerModal({
     setActionLoading(item.id);
     const newStatus = item.data?.status === "completed" ? "pending" : "completed";
     try {
-      const res = await fetch(`${apiBaseUrl}/api/tracker/records/${item.id}`, {
+      const res = await authFetch(`${apiBaseUrl}/api/tracker/records/${item.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -334,7 +335,7 @@ export default function TrackerModal({
     if (!confirm("Are you sure you want to delete this item?")) return;
     setActionLoading(id);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/tracker/records/${id}`, {
+      const res = await authFetch(`${apiBaseUrl}/api/tracker/records/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {

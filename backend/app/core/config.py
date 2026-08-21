@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # API Keys
+    API_KEY: Optional[str] = None
+    API_KEY_FILE_PATH: str = ".api_key"
+    API_KEY_AUTH_ENABLED: bool = True
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
