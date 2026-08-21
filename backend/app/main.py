@@ -2,15 +2,16 @@ import logging
 import uuid
 import json
 import asyncio
+from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from app.core.config import settings
-from app.core.auth import init_api_key, APIKeyAuthMiddleware, verify_ws_auth, get_api_key
+from app.core.auth import init_api_key, APIKeyAuthMiddleware, verify_ws_auth, get_api_key, get_active_api_key
 from app.services.graph import graph
-from app.core.database import init_db, get_store
+from app.core.database import init_db, get_store, check_database_health
 from app.services.memory_reflection import extract_memories_async
 
 logging.basicConfig(level=logging.INFO)
@@ -202,17 +203,141 @@ app.include_router(telegram_router, prefix="/api/telegram", tags=["Telegram"], d
 
 
 
-@app.get("/api/health", tags=["Health"], dependencies=[Depends(get_api_key)])
-async def health_check():
+@app.get("/api/health", tags=["Health"])
+async def health_check(response: Response):
     """
-    Standard health check endpoint.
+    Public health check endpoint.
+    Performs live database connectivity check (which determines overall service health).
+    Provides informational status of Telegram bot, MCP servers, Authentication, and LLM providers.
+    All keys and secret tokens are strictly masked / omitted.
+    """
+    # 1. Database Connectivity Probe (Critical - failure causes overall 503)
+    db_health = await check_database_health()
+    db_connected = db_health.get("status") == "connected"
+
+    # 2. Telegram Status (Informational)
+    from app.services.telegram_service import telegram_bot
+    has_telegram_token = bool(settings.TELEGRAM_BOT_TOKEN and not settings.TELEGRAM_BOT_TOKEN.startswith("your_"))
+    telegram_bot_username = None
+    if telegram_bot.application and telegram_bot.application.bot:
+        try:
+            telegram_bot_username = getattr(telegram_bot.application.bot, "username", None)
+        except Exception:
+            pass
+
+    if not has_telegram_token:
+        telegram_status_str = "not_configured"
+    elif telegram_bot._is_running:
+        telegram_status_str = "running"
+    else:
+        telegram_status_str = "stopped"
+
+    telegram_info = {
+        "status": telegram_status_str,
+        "is_active": telegram_bot._is_running,
+        "bot_username": telegram_bot_username,
+        "token_configured": has_telegram_token,
+        "chat_id_configured": bool(settings.TELEGRAM_CHAT_ID),
+    }
+
+    # 3. MCP Servers & Tools Status (Informational)
+    from app.services.mcp import mcp_manager
+    try:
+        servers_status = mcp_manager.get_servers_status()
+        sanitized_servers = {}
+        connected_count = 0
+        for s_name, s_info in servers_status.items():
+            is_conn = s_info.get("status") == "connected"
+            if is_conn:
+                connected_count += 1
+            sanitized_servers[s_name] = {
+                "status": s_info.get("status", "disconnected"),
+                "error": s_info.get("error"),
+                "tools_count": len(s_info.get("tools", [])),
+            }
+
+        if not sanitized_servers:
+            mcp_status_str = "none"
+        elif connected_count == len(sanitized_servers):
+            mcp_status_str = "connected"
+        elif connected_count > 0:
+            mcp_status_str = "degraded"
+        else:
+            mcp_status_str = "disconnected"
+
+        mcp_info = {
+            "status": mcp_status_str,
+            "total_servers": len(sanitized_servers),
+            "connected_servers": connected_count,
+            "total_tools": len(mcp_manager.get_tools()),
+            "servers": sanitized_servers,
+        }
+    except Exception as e:
+        mcp_info = {
+            "status": "error",
+            "total_servers": 0,
+            "connected_servers": 0,
+            "total_tools": 0,
+            "error": str(e),
+            "servers": {},
+        }
+
+    # 4. Authentication Status (Informational - never reveals active API key)
+    auth_info = {
+        "enabled": settings.API_KEY_AUTH_ENABLED,
+        "auth_type": "api_key",
+        "key_configured": bool(get_active_api_key()) if settings.API_KEY_AUTH_ENABLED else False,
+    }
+
+    # 5. LLM Providers Status (Informational - booleans only, no tokens)
+    configured_providers = []
+    if settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith("your_"):
+        configured_providers.append("gemini")
+    if settings.OPENAI_API_KEY and not settings.OPENAI_API_KEY.startswith("your_"):
+        configured_providers.append("openai")
+    if settings.ANTHROPIC_API_KEY and not settings.ANTHROPIC_API_KEY.startswith("your_"):
+        configured_providers.append("anthropic")
+    if settings.OPENROUTER_API_KEY and not settings.OPENROUTER_API_KEY.startswith("your_"):
+        configured_providers.append("openrouter")
+    if settings.TAVILY_API_KEY and not settings.TAVILY_API_KEY.startswith("your_"):
+        configured_providers.append("tavily")
+
+    llm_info = {
+        "default_provider": settings.DEFAULT_PROVIDER,
+        "configured_providers": configured_providers,
+    }
+
+    # 6. Set response status code based strictly on critical database probe
+    if not db_connected:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        overall_status = "unhealthy"
+    else:
+        response.status_code = status.HTTP_200_OK
+        overall_status = "healthy"
+
+    return {
+        "status": overall_status,
+        "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "services": {
+            "database": db_health,
+            "authentication": auth_info,
+            "telegram": telegram_info,
+            "mcp": mcp_info,
+            "llm_providers": llm_info,
+        }
+    }
+
+
+@app.get("/api/auth/verify", tags=["Auth"], dependencies=[Depends(get_api_key)])
+async def verify_auth():
+    """
+    Endpoint to verify API key validity for frontend sessions.
+    Requires valid API key.
     """
     return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "services": {
-            "database": "connected"  # Placeholder for database status
-        }
+        "status": "authenticated",
+        "valid": True,
     }
 
 
