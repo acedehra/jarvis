@@ -18,12 +18,25 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/chatbot
+      - API_KEY=${API_KEY}
+      - API_KEY_FILE_PATH=data/.api_key
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-true}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-jarvis-backend}
       - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
+    volumes:
+      - backend_data:/app/data
     depends_on:
       - postgres
 
@@ -40,3 +53,4 @@ services:
 
 volumes:
   postgres_data:
+  backend_data:
