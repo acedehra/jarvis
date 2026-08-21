@@ -248,7 +248,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     """
     def __init__(self, app, exempt_paths: Optional[list[str]] = None):
         super().__init__(app)
-        self.exempt_paths = exempt_paths or ["/docs", "/redoc", "/openapi.json", "/favicon.ico"]
+        self.exempt_paths = exempt_paths or ["/docs", "/redoc", "/openapi.json", "/favicon.ico", "/api/health"]
 
     async def dispatch(self, request: Request, call_next):
         # If authentication is disabled globally, pass through

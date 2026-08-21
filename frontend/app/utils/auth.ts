@@ -108,7 +108,7 @@ export async function authFetch(url: string, init?: RequestInit): Promise<Respon
 }
 
 /**
- * Validates an API key against the backend /api/health endpoint.
+ * Validates an API key against the backend /api/auth/verify endpoint.
  */
 export async function validateApiKey(
   key: string,
@@ -122,7 +122,7 @@ export async function validateApiKey(
   }
 
   try {
-    const res = await fetch(`${baseUrl}/api/health`, {
+    const res = await fetch(`${baseUrl}/api/auth/verify`, {
       method: "GET",
       headers: {
         "X-API-Key": trimmed,

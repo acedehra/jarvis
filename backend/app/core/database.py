@@ -142,6 +142,44 @@ def get_db_pool():
         raise RuntimeError("AsyncConnectionPool is not initialized. Ensure init_db() is called on startup.")
     return pool_instance
 
+async def check_database_health() -> dict:
+    """
+    Performs a lightweight connectivity check against the PostgreSQL database.
+    Returns connectivity status, round-trip latency in ms, and any error message (sanitized).
+    """
+    import time
+    global pool_instance
+    start_time = time.perf_counter()
+    if pool_instance is None:
+        return {
+            "status": "disconnected",
+            "latency_ms": None,
+            "error": "Database connection pool is not initialized.",
+        }
+    
+    try:
+        async with pool_instance.connection(timeout=3.0) as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT 1;")
+                await cur.fetchone()
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        return {
+            "status": "connected",
+            "latency_ms": latency_ms,
+            "error": None,
+        }
+    except Exception as e:
+        latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        error_msg = str(e)
+        if settings.DATABASE_URL in error_msg or "@" in error_msg:
+            error_msg = "Database connection failed (connection error or timeout)."
+        logger.warning(f"Database health check probe failed: {error_msg}")
+        return {
+            "status": "disconnected",
+            "latency_ms": latency_ms,
+            "error": error_msg,
+        }
+
 async def init_db():
     """
     Initializes the database connection, enters the context manager, and runs setup.

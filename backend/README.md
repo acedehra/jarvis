@@ -190,7 +190,8 @@ The primary chat interface operates over WebSockets for bi-directional token str
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | Service health status |
+| `GET` | `/api/health` | Public service health & database connectivity probe (includes Telegram, MCP, Auth, LLM statuses) |
+| `GET` | `/api/auth/verify` | Verify active session API key credentials |
 | `GET` | `/api/memories` | List long-term remembered facts |
 | `DELETE` | `/api/memories/{key}` | Delete a specific memory fact |
 | `DELETE` | `/api/chat/sessions/{session_id}` | Clear short-term thread checkpoints |
