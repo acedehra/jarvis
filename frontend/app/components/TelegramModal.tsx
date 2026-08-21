@@ -16,6 +16,7 @@ import {
   Sparkles,
   Smartphone
 } from "lucide-react";
+import { authFetch } from "../utils/auth";
 
 interface TelegramStatus {
   is_active: boolean;
@@ -58,7 +59,7 @@ export default function TelegramModal({
   const fetchStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/telegram/status`);
+      const res = await authFetch(`${apiBaseUrl}/api/telegram/status`);
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
@@ -81,7 +82,7 @@ export default function TelegramModal({
     setTestSending(true);
     setTestResult(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/telegram/test-message`, {
+      const res = await authFetch(`${apiBaseUrl}/api/telegram/test-message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

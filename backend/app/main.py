@@ -4,10 +4,11 @@ import json
 import asyncio
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from app.core.config import settings
+from app.core.auth import init_api_key, APIKeyAuthMiddleware, verify_ws_auth, get_api_key
 from app.services.graph import graph
 from app.core.database import init_db, get_store
 from app.services.memory_reflection import extract_memories_async
@@ -92,6 +93,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"⚙️  Default Provider: {settings.DEFAULT_PROVIDER} | User Timezone: {settings.USER_TIMEZONE}")
     logger.info("==========================================================")
 
+    # 0. API Key Authentication Initialization
+    init_api_key()
+
     # 1. Database Initialization
     logger.info("📦 Initializing database and memory storage...")
     try:
@@ -174,6 +178,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configure API Key Authentication Middleware (protects all /api/* routes)
+app.add_middleware(APIKeyAuthMiddleware)
+
 # Configure CORS Middleware
 # Allows requests from configured origins (default: all origins "*")
 app.add_middleware(
@@ -185,17 +192,17 @@ app.add_middleware(
 )
 
 from app.api.mcp_routes import router as mcp_router
-app.include_router(mcp_router, prefix="/api/mcp", tags=["MCP"])
+app.include_router(mcp_router, prefix="/api/mcp", tags=["MCP"], dependencies=[Depends(get_api_key)])
 
 from app.api.tracker_routes import router as tracker_router
-app.include_router(tracker_router, prefix="/api/tracker", tags=["Tracker"])
+app.include_router(tracker_router, prefix="/api/tracker", tags=["Tracker"], dependencies=[Depends(get_api_key)])
 
 from app.api.telegram_routes import router as telegram_router
-app.include_router(telegram_router, prefix="/api/telegram", tags=["Telegram"])
+app.include_router(telegram_router, prefix="/api/telegram", tags=["Telegram"], dependencies=[Depends(get_api_key)])
 
 
 
-@app.get("/api/health", tags=["Health"])
+@app.get("/api/health", tags=["Health"], dependencies=[Depends(get_api_key)])
 async def health_check():
     """
     Standard health check endpoint.
@@ -209,7 +216,7 @@ async def health_check():
     }
 
 
-@app.get("/api/memories", tags=["Memories"])
+@app.get("/api/memories", tags=["Memories"], dependencies=[Depends(get_api_key)])
 async def get_memories(user_id: str = "default_user"):
     """
     Retrieve all long-term memory facts stored for the user.
@@ -223,7 +230,7 @@ async def get_memories(user_id: str = "default_user"):
         return []
 
 
-@app.delete("/api/memories/{key}", tags=["Memories"])
+@app.delete("/api/memories/{key}", tags=["Memories"], dependencies=[Depends(get_api_key)])
 async def delete_memory(key: str, user_id: str = "default_user"):
     """
     Delete a specific long-term memory key for the user.
@@ -237,7 +244,7 @@ async def delete_memory(key: str, user_id: str = "default_user"):
         return {"status": "error", "message": str(e)}
 
 
-@app.delete("/api/chat/sessions/{session_id}", tags=["Chat"])
+@app.delete("/api/chat/sessions/{session_id}", tags=["Chat"], dependencies=[Depends(get_api_key)])
 async def delete_chat_session(session_id: str):
     """
     Delete the short-term memory (checkpoint) of a specific chat session.
@@ -306,10 +313,18 @@ async def stream_graph_events(event_generator, websocket: WebSocket, total_token
 
 
 @app.websocket("/api/chat")
-async def websocket_chat(websocket: WebSocket, session_id: Optional[str] = None):
+async def websocket_chat(
+    websocket: WebSocket,
+    session_id: Optional[str] = None,
+    api_key: Optional[str] = None,
+):
     """
     WebSocket endpoint for bidirectional agent chat streaming using Langgraph.
     """
+    if not await verify_ws_auth(websocket, query_api_key=api_key):
+        await websocket.close(code=1008, reason="Invalid or missing API key")
+        return
+
     await websocket.accept()
     logger.info(f"WebSocket connection established. Query session_id: {session_id}")
     

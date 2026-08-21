@@ -26,13 +26,24 @@ import {
   Check,
   Copy,
   Server,
-  Layers
+  Layers,
+  Lock,
+  LogOut
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import McpManagementModal from "./components/McpManagementModal";
 import TrackerModal from "./components/TrackerModal";
 import TelegramModal from "./components/TelegramModal";
+import ApiKeyGate from "./components/ApiKeyGate";
+import { 
+  getStoredApiKey, 
+  clearStoredApiKey, 
+  authFetch, 
+  getAuthenticatedWsUrl, 
+  getApiBaseUrl, 
+  UNAUTHORIZED_EVENT 
+} from "./utils/auth";
 
 
 interface ToolCall {
@@ -166,23 +177,11 @@ export function CodeBlock({ language, value }: CodeBlockProps) {
   );
 }
 
-const getApiBaseUrl = () => {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `http://${window.location.hostname}:8000`;
-  }
-  return "http://localhost:8000";
-};
-
-const getWsUrl = (threadId: string) => {
-  const apiBase = getApiBaseUrl();
-  const wsBase = apiBase.replace(/^http/, "ws");
-  return `${wsBase}/api/chat?session_id=${threadId}`;
-};
-
 export default function Home() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | undefined>(undefined);
+
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string>("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -218,9 +217,28 @@ export default function Home() {
   const [memories, setMemories] = useState<{ key: string; fact: string }[]>([]);
 
 
+  // Check session storage authentication on mount
+  useEffect(() => {
+    const key = getStoredApiKey();
+    if (key) {
+      setIsAuthenticated(true);
+    }
+    setAuthChecked(true);
+
+    const handleUnauthorized = () => {
+      setIsAuthenticated(false);
+      setAuthError("Session invalidated or API key rejected. Please re-authenticate.");
+    };
+
+    window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () => {
+      window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
+    };
+  }, []);
+
   const fetchMemories = async () => {
     try {
-      const res = await fetch(`${getApiBaseUrl()}/api/memories`);
+      const res = await authFetch(`${getApiBaseUrl()}/api/memories`);
       if (res.ok) {
         const data = await res.json();
         setMemories(data);
@@ -232,7 +250,7 @@ export default function Home() {
 
   const deleteMemory = async (key: string) => {
     try {
-      const res = await fetch(`${getApiBaseUrl()}/api/memories/${key}`, {
+      const res = await authFetch(`${getApiBaseUrl()}/api/memories/${key}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -244,12 +262,12 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (memoryModalOpen) {
+    if (memoryModalOpen && isAuthenticated) {
       setTimeout(() => {
         fetchMemories();
       }, 0);
     }
-  }, [memoryModalOpen]);
+  }, [memoryModalOpen, isAuthenticated]);
   
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -316,11 +334,12 @@ export default function Home() {
   }, [threads, activeThreadId, saveThreads]);
 
   const connectWebSocket = () => {
-    if (!activeThreadId) return;
+    if (!activeThreadId || !getStoredApiKey()) return;
     if (ws) ws.close();
     
     setIsConnecting(true);
-    const socket = new WebSocket(getWsUrl(activeThreadId));
+    const wsUrl = getAuthenticatedWsUrl(activeThreadId);
+    const socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
       setIsConnected(true);
@@ -452,18 +471,27 @@ export default function Home() {
       }
     };
 
-    socket.onclose = () => { setIsConnected(false); setIsConnecting(false); };
+    socket.onclose = (event) => { 
+      setIsConnected(false); 
+      setIsConnecting(false); 
+      if (event.code === 1008) {
+        clearStoredApiKey();
+        setAuthError("Session rejected by server (1008 Policy Violation). Please verify your API key.");
+      }
+    };
     socket.onerror = () => { setIsConnected(false); setIsConnecting(false); };
     setWs(socket);
   };
 
   useEffect(() => {
-    setTimeout(() => {
-      connectWebSocket();
-    }, 0);
+    if (isAuthenticated) {
+      setTimeout(() => {
+        connectWebSocket();
+      }, 0);
+    }
     return () => { if (ws) ws.close(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThreadId]);
+  }, [activeThreadId, isAuthenticated]);
 
   const handleScroll = () => {
     const container = containerRef.current;
@@ -533,7 +561,7 @@ export default function Home() {
   const deleteThread = useCallback(async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await fetch(`${getApiBaseUrl()}/api/chat/sessions/${id}`, {
+      await authFetch(`${getApiBaseUrl()}/api/chat/sessions/${id}`, {
         method: "DELETE",
       });
     } catch (err) {
@@ -555,6 +583,27 @@ export default function Home() {
     if (name === "web_search") return <Search className="w-3.5 h-3.5 text-yellow-400" />;
     return <Terminal className="w-3.5 h-3.5 text-slate-400" />;
   };
+
+  if (!authChecked) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-slate-950 text-slate-400">
+        <RefreshCw className="w-6 h-6 animate-spin text-teal-400" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <ApiKeyGate
+        onAuthenticated={() => {
+          setIsAuthenticated(true);
+          setAuthError(undefined);
+        }}
+        apiBaseUrl={getApiBaseUrl()}
+        initialError={authError}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-100 font-sans selection:bg-teal-500/30 overflow-hidden">
@@ -634,6 +683,20 @@ export default function Home() {
               {isConnected ? <><Wifi className="w-3 h-3 text-emerald-400 animate-pulse" /><span className="text-emerald-400 font-medium text-[11px]">Connected</span></> : <><WifiOff className="w-3 h-3 text-rose-400" /><span className="text-rose-400 font-medium text-[11px]">Offline</span></>}
               {!isConnected && <button onClick={connectWebSocket} disabled={isConnecting} className="ml-1.5"><RefreshCw className={`w-3 h-3 ${isConnecting ? "animate-spin" : ""}`} /></button>}
             </div>
+
+            {/* Lock Session Button */}
+            <button
+              onClick={() => {
+                clearStoredApiKey();
+                setIsAuthenticated(false);
+                setAuthError("Session locked. Please enter your API key to resume.");
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800/60 hover:bg-rose-500/20 border border-slate-700/40 hover:border-rose-500/40 text-xs text-slate-300 hover:text-rose-300 font-medium transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+              title="Lock Session & Clear API Key"
+            >
+              <Lock className="w-3.5 h-3.5 text-teal-400" />
+              <span>Lock Session</span>
+            </button>
           </div>
         </header>
 
