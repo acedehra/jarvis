@@ -216,8 +216,9 @@ async def health_check(response: Response):
     db_connected = db_health.get("status") == "connected"
 
     # 2. Telegram Status (Informational)
-    from app.services.telegram_service import telegram_bot
+    from app.services.telegram_service import telegram_bot, is_valid_chat_id
     has_telegram_token = bool(settings.TELEGRAM_BOT_TOKEN and not settings.TELEGRAM_BOT_TOKEN.startswith("your_"))
+    is_chat_id_valid = is_valid_chat_id(settings.TELEGRAM_CHAT_ID)
     telegram_bot_username = None
     if telegram_bot.application and telegram_bot.application.bot:
         try:
@@ -227,6 +228,8 @@ async def health_check(response: Response):
 
     if not has_telegram_token:
         telegram_status_str = "not_configured"
+    elif not is_chat_id_valid:
+        telegram_status_str = "missing_chat_id"
     elif telegram_bot._is_running:
         telegram_status_str = "running"
     else:
@@ -238,6 +241,8 @@ async def health_check(response: Response):
         "bot_username": telegram_bot_username,
         "token_configured": has_telegram_token,
         "chat_id_configured": bool(settings.TELEGRAM_CHAT_ID),
+        "chat_id_valid": is_chat_id_valid,
+        "error": telegram_bot.last_error,
     }
 
     # 3. MCP Servers & Tools Status (Informational)

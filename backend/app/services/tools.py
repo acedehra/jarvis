@@ -328,12 +328,13 @@ def send_telegram_message(message: str) -> str:
         message (str): The content of the message to send.
     """
     from app.core.config import settings
+    from app.services.telegram_service import is_valid_chat_id
     import requests
 
     token = settings.TELEGRAM_BOT_TOKEN
     chat_id = settings.TELEGRAM_CHAT_ID
 
-    if not token or not chat_id:
+    if not token or token.startswith("your_") or not is_valid_chat_id(chat_id):
         return f"[SIMULATION MODE] Successfully simulated sending Telegram message: '{message}'"
 
     try:

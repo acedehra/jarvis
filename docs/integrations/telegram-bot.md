@@ -41,5 +41,6 @@ The backend runs an asynchronous reminder worker that continuously checks the `t
 ## 🔒 Security & Chat Whitelisting
 
 To prevent unauthorized users from interacting with your bot:
-- All incoming updates verify `message.from_user.id == settings.TELEGRAM_CHAT_ID`.
-- Unauthorized requests are silently ignored or replied with an access denied alert.
+- `TELEGRAM_CHAT_ID` is strictly required before the bot will start polling updates. If `TELEGRAM_CHAT_ID` is missing or invalid, polling is halted and an error message is logged.
+- All incoming updates verify `message.chat.id == settings.TELEGRAM_CHAT_ID`.
+- Unauthorized requests are rejected with an access denied alert.
