@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.core.config import settings
-from app.services.telegram_service import telegram_bot
+from app.services.telegram_service import telegram_bot, is_valid_chat_id
 from app.services.tools import send_telegram_message
 
 logger = logging.getLogger("telegram_routes")
@@ -33,6 +33,7 @@ async def get_telegram_status():
             pass
 
     has_token = bool(settings.TELEGRAM_BOT_TOKEN and not settings.TELEGRAM_BOT_TOKEN.startswith("your_"))
+    chat_id_valid = is_valid_chat_id(settings.TELEGRAM_CHAT_ID)
     
     return {
         "status": "success",
@@ -40,7 +41,9 @@ async def get_telegram_status():
         "bot_info": bot_info,
         "has_token_configured": has_token,
         "chat_id_configured": bool(settings.TELEGRAM_CHAT_ID),
+        "is_chat_id_valid": chat_id_valid,
         "chat_id": settings.TELEGRAM_CHAT_ID if settings.TELEGRAM_CHAT_ID else None,
+        "error": telegram_bot.last_error,
     }
 
 

@@ -10,6 +10,23 @@ from app.core.config import settings
 logger = logging.getLogger("telegram_service")
 
 
+def is_valid_chat_id(chat_id: Optional[str]) -> bool:
+    """
+    Validate that a chat ID is non-empty, not a default placeholder,
+    and represents a valid numeric integer (positive or negative).
+    """
+    if not chat_id:
+        return False
+    val = str(chat_id).strip()
+    if not val or val.startswith("your_") or val == "your_telegram_chat_id_here":
+        return False
+    try:
+        int(val)
+        return True
+    except ValueError:
+        return False
+
+
 class TelegramBotService:
     """
     Service managing two-way Telegram Bot communication with the LangGraph Jarvis agent.
@@ -18,23 +35,38 @@ class TelegramBotService:
     def __init__(self):
         self.application: Optional[Application] = None
         self._is_running: bool = False
+        self.last_error: Optional[str] = None
 
     def is_authorized(self, chat_id: int) -> bool:
         """
-        Check if the incoming chat ID matches TELEGRAM_CHAT_ID (if set).
+        Check if the incoming chat ID matches TELEGRAM_CHAT_ID.
+        Strictly denies access if TELEGRAM_CHAT_ID is missing, invalid, or does not match.
         """
-        if not settings.TELEGRAM_CHAT_ID:
-            return True
-        return str(chat_id).strip() == str(settings.TELEGRAM_CHAT_ID).strip()
+        configured_id = settings.TELEGRAM_CHAT_ID
+        if not is_valid_chat_id(configured_id):
+            return False
+        return str(chat_id).strip() == str(configured_id).strip()
 
     async def start(self):
         """
         Initializes and starts the Telegram Bot polling in the background.
         Fails gracefully without halting application startup if credentials are missing or invalid.
+        Requires both a valid TELEGRAM_BOT_TOKEN and a valid TELEGRAM_CHAT_ID to start polling.
         """
+        self.last_error = None
         token = settings.TELEGRAM_BOT_TOKEN
         if not token or token.strip().startswith("your_"):
+            self.last_error = "TELEGRAM_BOT_TOKEN is not configured."
             logger.info("ℹ️ Telegram Bot: No valid TELEGRAM_BOT_TOKEN configured. Telegram bot listener is DISABLED.")
+            return
+
+        chat_id = settings.TELEGRAM_CHAT_ID
+        if not is_valid_chat_id(chat_id):
+            self.last_error = (
+                f"TELEGRAM_CHAT_ID is missing or invalid ({chat_id!r}). "
+                "Telegram bot polling is DISABLED for security. Please set a valid numeric TELEGRAM_CHAT_ID in .env."
+            )
+            logger.error(f"❌ Telegram Bot: {self.last_error}")
             return
 
         try:
@@ -45,10 +77,7 @@ class TelegramBotService:
             # Verify connection with Telegram API
             me = await self.application.bot.get_me()
             logger.info(f"✅ Telegram Bot connected successfully as @{me.username} (ID: {me.id}).")
-            if settings.TELEGRAM_CHAT_ID:
-                logger.info(f"🔒 Telegram Bot is restricted to Chat ID: {settings.TELEGRAM_CHAT_ID}")
-            else:
-                logger.info("🌐 Telegram Bot is OPEN to all incoming chats (TELEGRAM_CHAT_ID not set).")
+            logger.info(f"🔒 Telegram Bot is restricted to Chat ID: {chat_id}")
 
             # Register Command & Message Handlers
             self.application.add_handler(CommandHandler("start", self._handle_start))
@@ -66,6 +95,7 @@ class TelegramBotService:
             logger.info(f"🚀 Telegram Bot is ACTIVE and listening for incoming messages as @{me.username}.")
 
         except Exception as e:
+            self.last_error = str(e)
             logger.warning(
                 f"⚠️ Telegram Bot failed to start: {e}. "
                 f"The Jarvis backend will continue running normally without Telegram integration."

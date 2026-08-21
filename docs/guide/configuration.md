@@ -55,6 +55,6 @@ All settings for J.A.R.V.I.S. are defined via environment variables loaded in `b
 Inspection tools (`read_workspace_file`, `search_workspace_content`, `list_workspace_files`) are strictly confined to authorized project paths and are forbidden from reading `.env` files, SSH keys, or certificates.
 :::
 
-::: warning Telegram Access Whitelisting
-Always configure `TELEGRAM_CHAT_ID`. If left empty in production, any unauthorized Telegram user could message your bot and trigger tool executions.
+::: warning Telegram Access Whitelisting & Polling Protection
+Always configure `TELEGRAM_CHAT_ID` alongside `TELEGRAM_BOT_TOKEN`. If `TELEGRAM_CHAT_ID` is missing or invalid, Telegram polling is automatically disabled to prevent unauthorized access by other Telegram users.
 :::

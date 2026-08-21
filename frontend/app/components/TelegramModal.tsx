@@ -27,7 +27,9 @@ interface TelegramStatus {
   } | null;
   has_token_configured: boolean;
   chat_id_configured: boolean;
+  is_chat_id_valid?: boolean;
   chat_id?: string | null;
+  error?: string | null;
 }
 
 interface TelegramModalProps {
@@ -116,6 +118,7 @@ export default function TelegramModal({
 
   const isActive = status?.is_active;
   const botUsername = status?.bot_info?.username;
+  const isChatIdMissingOrInvalid = status?.has_token_configured && !status?.is_chat_id_valid;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -134,6 +137,11 @@ export default function TelegramModal({
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Active & Listening
+                  </span>
+                ) : isChatIdMissingOrInvalid ? (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 text-amber-400" />
+                    Chat ID Required (Polling Stopped)
                   </span>
                 ) : (
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-medium">
@@ -167,6 +175,21 @@ export default function TelegramModal({
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
           
+          {/* Missing/Invalid Chat ID Warning Alert */}
+          {isChatIdMissingOrInvalid && (
+            <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5 text-xs text-amber-300">
+              <div className="flex items-center gap-2 font-bold text-amber-200">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-400" />
+                <span>Polling Disabled for Security</span>
+              </div>
+              <p className="text-[11px] text-amber-300/90 leading-relaxed pl-6">
+                To prevent open access by any Telegram user, Telegram bot polling is stopped until a valid numeric{" "}
+                <code className="px-1 py-0.5 bg-amber-950/60 text-amber-200 rounded font-mono">TELEGRAM_CHAT_ID</code>{" "}
+                is configured in your <code className="px-1 py-0.5 bg-amber-950/60 text-amber-200 rounded font-mono">backend/.env</code>.
+              </p>
+            </div>
+          )}
+
           {/* Status & Connection Card */}
           <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
             <div className="flex items-center justify-between">
@@ -198,7 +221,11 @@ export default function TelegramModal({
               <div className="p-3 bg-slate-900/80 border border-slate-800/80 rounded-lg space-y-1">
                 <span className="text-slate-500 text-[10px] uppercase font-bold block">Authorized Chat ID</span>
                 <span className="font-mono text-slate-200 block truncate">
-                  {status?.chat_id ? `${status.chat_id} (Restricted 🔒)` : "Open to all incoming chats"}
+                  {status?.is_chat_id_valid
+                    ? `${status.chat_id} (Restricted 🔒)`
+                    : status?.chat_id
+                    ? `${status.chat_id} (Invalid ⚠️)`
+                    : "Not Configured (Required ⚠️)"}
                 </span>
               </div>
             </div>
@@ -210,8 +237,8 @@ export default function TelegramModal({
               </span>
               <button
                 onClick={handleSendTest}
-                disabled={testSending}
-                className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md shadow-sky-600/20 active:scale-95 flex-shrink-0"
+                disabled={testSending || !status?.is_chat_id_valid}
+                className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md shadow-sky-600/20 active:scale-95 flex-shrink-0"
               >
                 {testSending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                 <span>Send Test Alert</span>
@@ -269,7 +296,7 @@ export default function TelegramModal({
             <ol className="list-decimal list-inside space-y-1 text-slate-400">
               <li>Message <strong className="text-slate-200">@BotFather</strong> on Telegram to create a bot and get a token.</li>
               <li>Paste the token in <code className="px-1 py-0.5 bg-slate-800 text-sky-300 rounded font-mono">backend/.env</code> as <code className="px-1 py-0.5 bg-slate-800 text-sky-300 rounded font-mono">TELEGRAM_BOT_TOKEN</code>.</li>
-              <li>Message your bot with <code className="px-1 py-0.5 bg-slate-800 text-sky-300 rounded font-mono">/start</code> to receive your Chat ID, then add it to <code className="px-1 py-0.5 bg-slate-800 text-sky-300 rounded font-mono">TELEGRAM_CHAT_ID</code>.</li>
+              <li>Get your numeric Chat ID (by sending any message to <strong className="text-slate-200">@userinfobot</strong> on Telegram) and paste it into <code className="px-1 py-0.5 bg-slate-800 text-sky-300 rounded font-mono">TELEGRAM_CHAT_ID</code> in <code className="px-1 py-0.5 bg-slate-800 text-sky-300 rounded font-mono">backend/.env</code>.</li>
             </ol>
           </div>
 
