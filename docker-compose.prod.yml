@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   frontend:
     image: ghcr.io/acedehra/jarvis-frontend:${TAG:-latest}
@@ -33,7 +31,7 @@ services:
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-jarvis-backend}
       - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
     volumes:
-      - backend_data:/app/data
+      - ./backend_data:/app/data
     depends_on:
       - postgres
     restart: always
@@ -47,7 +45,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-chatbot}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
     restart: always
 
 volumes:

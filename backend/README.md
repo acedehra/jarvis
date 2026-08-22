@@ -148,7 +148,7 @@ All endpoints under `/api/*` and WebSocket connections require API key authentic
 Clients can supply the key via:
 1. **HTTP Header**: `X-API-Key: <your_key>`
 2. **Authorization Header**: `Authorization: Bearer <your_key>`
-3. **Query Parameter**: `?api_key=<your_key>` (e.g. `/api/chat?session_id=...&api_key=...`)
+3. **WebSocket Query Parameter**: `?api_key=<your_key>` (for WebSocket handshake `/api/chat?session_id=...&api_key=...`)
 
 ### Key Lifecycle & Configuration
 - **Pre-configured**: Set `API_KEY=your_secret_key` in `.env`.
