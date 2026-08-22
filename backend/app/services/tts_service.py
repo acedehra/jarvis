@@ -119,7 +119,10 @@ def clean_text_for_speech(text: str) -> str:
     # 10. Unordered list bullets (*, -, •)
     cleaned = re.sub(r'^\s*[\*\-•]\s+', '', cleaned, flags=re.MULTILINE)
 
-    # 11. Normalize excessive whitespace and newlines
+    # 11. Strip all Unicode emojis and pictographic symbols so TTS does not speak out emoji names (e.g. "money bag")
+    cleaned = re.sub(r'[\U00010000-\U0010ffff\u2600-\u27BF\u2300-\u23FF\u2B50\uFE00-\uFE0F\u200D]', '', cleaned)
+
+    # 12. Normalize excessive whitespace and newlines
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
     return cleaned

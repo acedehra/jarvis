@@ -60,7 +60,8 @@ backend/
 │   ├── api/                      # REST API Endpoints
 │   │   ├── mcp_routes.py         # MCP server registry and connection management
 │   │   ├── telegram_routes.py    # Telegram bot health and test dispatch
-│   │   └── tracker_routes.py     # Universal structured tracker CRUD & aggregations
+│   │   ├── tracker_routes.py     # Universal structured tracker CRUD & aggregations
+│   │   └── tts_routes.py         # Kokoro TTS synthesis, voice list & health probe
 │   ├── core/                     # Application Core
 │   │   ├── auth.py               # Key authentication, first-run generation & security dependencies
 │   │   ├── config.py             # Pydantic BaseSettings and env configuration
@@ -70,9 +71,10 @@ backend/
 │   │   ├── llm.py                # Multi-provider LLM factory (Gemini, OpenAI, Anthropic, OpenRouter)
 │   │   ├── mcp.py                # Model Context Protocol (MCP) manager & schema builder
 │   │   ├── memory_reflection.py  # Background memory extraction & reflection pipeline
-│   │   ├── telegram_service.py   # python-telegram-bot async service
+│   │   ├── telegram_service.py   # python-telegram-bot async service & voice replies
 │   │   ├── tools.py              # Sandboxed workspace tools, Tavily web search, Telegram tool
-│   │   └── tracker.py            # PostgreSQL tracker service with JSONB query builder
+│   │   ├── tracker.py            # PostgreSQL tracker service with JSONB query builder
+│   │   └── tts_service.py        # Kokoro TTS client, voice catalog & speech sanitization
 │   └── main.py                   # FastAPI application entrypoint, lifespan, WebSocket handler
 ├── .env.example                  # Environment variable template
 ├── Dockerfile                    # Container definition
@@ -96,6 +98,10 @@ Create a `.env` file in `backend/` (or copy `.env.example`):
 | `TAVILY_API_KEY` | Optional | Tavily Search API key for web search | `None` |
 | `TELEGRAM_BOT_TOKEN` | Optional | Telegram Bot token | `None` (Runs in simulation mode if omitted) |
 | `TELEGRAM_CHAT_ID` | Optional | Target Telegram Chat ID | `None` |
+| `TTS_BASE_URL` | Optional | URL of the Kokoro TTS service | `http://localhost:8880` (`http://tts:8880` in Docker) |
+| `TTS_VOICE` | Optional | Default Kokoro voice ID | `bm_george` (British Male - J.A.R.V.I.S.) |
+| `TTS_SPEED` | Optional | Voice playback speed multiplier (0.5 - 2.0) | `1.0` |
+| `TELEGRAM_VOICE_REPLY` | Optional | Automatically send audio voice notes in Telegram | `false` |
 | `USER_TIMEZONE` | Optional | User timezone for temporal awareness & reminders | `America/New_York` |
 | `CHECKPOINT_RETENTION_HOURS` | Optional | Inactivity threshold in hours before auto-purging checkpoints | `24` |
 | `CHECKPOINT_CLEANUP_INTERVAL_HOURS` | Optional | Frequency in hours to execute checkpoint cleanup worker | `1` |
@@ -207,6 +213,9 @@ The primary chat interface operates over WebSockets for bi-directional token str
 | `DELETE` | `/api/mcp/servers/{name}` | Disconnect and remove an MCP server |
 | `GET` | `/api/telegram/status` | Telegram bot connection status |
 | `POST` | `/api/telegram/test-message` | Send test Telegram notification |
+| `POST` | `/api/tts/speak` | Synthesize sanitized text into streaming MP3 audio |
+| `GET` | `/api/tts/voices` | List supported Kokoro voices (British & US) |
+| `GET` | `/api/tts/status` | Live connection health probe for Kokoro TTS service |
 
 ---
 

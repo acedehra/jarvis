@@ -129,14 +129,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Telegram bot could not be started: {e}. Backend will continue running.")
 
-    # 5. Background Workers
+    # 5. Kokoro Text-to-Speech (TTS) Service Probe & Logging
+    logger.info(f"🎙️  Checking Kokoro TTS service ({settings.TTS_VOICE} @ {settings.TTS_BASE_URL})...")
+    try:
+        from app.services.tts_service import check_tts_health
+        tts_status = await check_tts_health()
+        if tts_status.get("status") == "connected":
+            logger.info(f"✅ Kokoro TTS is ACTIVE and ready (Default Voice: '{settings.TTS_VOICE}', Speed: {settings.TTS_SPEED}x).")
+        else:
+            logger.info(
+                f"ℹ️  Kokoro TTS is offline or unreachable at {settings.TTS_BASE_URL} ({tts_status.get('error', 'unreachable')}). "
+                "Voice synthesis will activate once the 'tts' container or Kokoro service is running."
+            )
+    except Exception as e:
+        logger.warning(f"⚠️  Kokoro TTS service check encountered an issue: {e}")
+
+    # 6. Background Workers
     reminder_task = asyncio.create_task(reminder_worker())
     cleanup_task = asyncio.create_task(checkpoint_cleanup_worker())
 
     from app.services.mcp import mcp_manager
     total_tools = len(builtin_tools) + len(mcp_manager.get_tools())
     logger.info("==========================================================")
-    logger.info(f"🚀 J.A.R.V.I.S. is ONLINE and ready! ({total_tools} total tools available)")
+    logger.info(f"🚀 J.A.R.V.I.S. is ONLINE and ready! ({total_tools} total tools available | Voice: '{settings.TTS_VOICE}')")
     logger.info("==========================================================")
 
     yield

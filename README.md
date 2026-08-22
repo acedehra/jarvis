@@ -90,11 +90,18 @@ Eliminates LLM arithmetic hallucination by instructing the agent to delegate mat
 ### 6. Bidirectional Telegram Gateway
 Two-way interaction allowing users to converse with J.A.R.V.I.S., query tracker databases, log expenses, and receive scheduled reminder alerts directly on mobile via Telegram.
 
+### 7. Authentic J.A.R.V.I.S. Voice & Kokoro-82M TTS
+Neural Text-to-Speech synthesis with Paul Bettany's refined, calm British gentleman cadence:
+- **Dedicated CPU Container**: Runs Kokoro-82M via `ghcr.io/remsky/kokoro-fastapi-cpu` consuming only **~350 MB RAM** with zero GPU requirements.
+- **Web UI Audio Controls**: Interactive **Speak** buttons on message bubbles and a global **Auto-Speak** toggle with animated wave indicators.
+- **Telegram Spoken Voice Notes**: Toggle automatic audio voice note replies using the `/voice` command or `TELEGRAM_VOICE_REPLY=true`.
+- **Intelligent Speech Sanitization**: Strips markdown syntax, raw code blocks, and emojis before synthesis so speech sounds completely natural.
+
 ---
 
 ## ⚡ Quickstart with Docker Compose
 
-The fastest way to launch the entire stack (Frontend, Backend, and PostgreSQL with pgvector):
+The fastest way to launch the entire stack (Frontend, Backend, Kokoro TTS, and PostgreSQL with pgvector):
 
 ```bash
 # 1. Clone the repository
@@ -111,6 +118,7 @@ docker compose up --build
 
 - **Frontend Web UI**: [http://localhost:3000](http://localhost:3000)
 - **Backend API & Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Kokoro TTS Service (OpenAI-compatible)**: [http://localhost:8880](http://localhost:8880)
 - **PostgreSQL Database**: `localhost:5432`
 
 ---
@@ -155,15 +163,15 @@ bun run dev
 .
 ├── backend/                      # FastAPI & LangGraph AI Service
 │   ├── app/
-│   │   ├── api/                  # REST API routes (MCP, Telegram, Tracker)
-│   │   ├── core/                 # Config & PostgreSQL connection pools
-│   │   ├── services/             # Graph, LLM, MCP, Memory, Tools, Tracker
-│   │   └── main.py               # FastAPI lifespan & WebSocket streaming
+│   │   ├── api/                  # REST API routes (MCP, Telegram, Tracker, TTS)
+│   │   ├── core/                 # Config, database pools, and API key security
+│   │   ├── services/             # Graph, LLM, MCP, Memory, Telegram, Tools, Tracker, TTS
+│   │   └── main.py               # FastAPI lifespan, WebSocket streaming & health probe
 │   ├── Dockerfile
 │   ├── pyproject.toml            # UV dependencies
 │   └── README.md                 # Backend technical guide
 ├── frontend/                     # Next.js 16 Web Dashboard
-│   ├── app/                      # React 19 App Router & Modals
+│   ├── app/                      # React 19 App Router, Audio Player & Modals
 │   ├── Dockerfile
 │   ├── package.json              # Bun packages
 │   └── README.md                 # Frontend technical guide
@@ -171,10 +179,10 @@ bun run dev
 │   ├── .vitepress/               # Config, theme & navigation
 │   ├── guide/                    # Quickstart, architecture, config
 │   ├── core/                     # LangGraph, Memory, MCP, HITL
-│   ├── integrations/             # Telegram, Web, Calendar
+│   ├── integrations/             # Telegram, Web Dashboard, Kokoro TTS, Calendar
 │   └── roadmap/                  # J.A.R.V.I.S. 2.0 Feature Strategy
 ├── .github/workflows/            # CI/CD Workflows (Docker & Docs Pages Deploy)
-├── docker-compose.yml            # Local development compose
+├── docker-compose.yml            # Local development compose (Frontend, Backend, TTS, Postgres)
 ├── docker-compose.prod.yml       # Production multi-container compose
 ├── LICENSE                       # MIT Open Source License
 └── README.md                     # Monorepo architecture & quickstart

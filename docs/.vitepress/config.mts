@@ -63,6 +63,7 @@ export default defineConfig({
         items: [
           { text: 'Telegram Gateway', link: '/integrations/telegram-bot' },
           { text: 'Next.js 16 Web Dashboard', link: '/integrations/web-dashboard' },
+          { text: 'Kokoro TTS & Voice', link: '/integrations/kokoro-tts' },
           { text: 'Google Calendar Sync', link: '/integrations/google-calendar' }
         ]
       },

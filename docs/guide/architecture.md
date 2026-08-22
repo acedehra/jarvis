@@ -18,23 +18,29 @@ J.A.R.V.I.S. is built on a modern, decoupled asynchronous architecture designed 
                       │         FASTAPI GATEWAY & LIFESPAN      │
                       │  • Connection Managers & Async Pools    │
                       │  • REST Endpoints & Background Workers  │
-                      └────────────────────┬────────────────────┘
-                                           │
-                                           ▼
-                      ┌─────────────────────────────────────────┐
-                      │      LANGGRAPH AGENT STATE MACHINE      │
-                      │  • Typed State: AgentState              │
-                      │  • Dynamic Node Routing & HITL Gates    │
-                      └───────┬────────────┬────────────┬───────┘
-                              │            │            │
-            ┌─────────────────┘            │            └─────────────────┐
-            ▼                              ▼                              ▼
-  ┌───────────────────┐          ┌───────────────────┐          ┌───────────────────┐
-  │   POSTGRESQL TIER │          │   MCP RUNTIME     │          │  EXECUTION TOOLS  │
-  │ • Checkpointers   │          │ • Stdio Process   │          │ • Tavily Search   │
-  │ • Long-Term Store │          │ • Remote SSE Hub  │          │ • SQL JSONB Store │
-  │ • Background Refl │          │ • Schema Wrapper  │          │ • Sandboxed Files │
-  └───────────────────┘          └───────────────────┘          └───────────────────┘
+                      └──────────┬───────────────────┬──────────┘
+                                 │                   │
+                                 │ (Speech /tts)     ▼
+                                 │          ┌─────────────────────────────────┐
+                                 │          │   LANGGRAPH AGENT STATE MACHINE │
+                                 │          │  • Typed State: AgentState      │
+                                 │          │  • Dynamic Routing & HITL Gates │
+                                 │          └────┬────────────┬────────────┬──┘
+                                 ▼               │            │            │
+                      ┌──────────────────┐       │            │            │
+                      │ KOKORO TTS (CPU) │       │            │            │
+                      │ • ~350MB RAM     │       │            │            │
+                      │ • British Voice  │       │            │            │
+                      └──────────────────┘       │            │            │
+                                                 │            │            │
+             ┌───────────────────────────────────┘            │            └─────────────────┐
+             ▼                                                ▼                              ▼
+   ┌───────────────────┐                            ┌───────────────────┐          ┌───────────────────┐
+   │   POSTGRESQL TIER │                            │   MCP RUNTIME     │          │  EXECUTION TOOLS  │
+   │ • Checkpointers   │                            │ • Stdio Process   │          │ • Tavily Search   │
+   │ • Long-Term Store │                            │ • Remote SSE Hub  │          │ • SQL JSONB Store │
+   │ • Background Refl │                            │ • Schema Wrapper  │          │ • Sandboxed Files │
+   └───────────────────┘                            └───────────────────┘          └───────────────────┘
 ```
 
 ---
