@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 from fastapi import Request, HTTPException, status, Security, WebSocket
-from fastapi.security import APIKeyHeader, APIKeyQuery, HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -18,7 +18,6 @@ _is_first_run: bool = False
 
 # Security schemes for OpenAPI / Swagger UI
 api_key_header_scheme = APIKeyHeader(name="X-API-Key", auto_error=False, description="API Key passed via X-API-Key header")
-api_key_query_scheme = APIKeyQuery(name="api_key", auto_error=False, description="API Key passed via api_key query parameter")
 http_bearer_scheme = HTTPBearer(auto_error=False, description="API Key passed via Authorization: Bearer header")
 
 
@@ -127,7 +126,6 @@ Saved to: {file_path}
    - You can provide this key to API clients using any of the following:
        • Header:        X-API-Key: {api_key}
        • Authorization: Bearer {api_key}
-       • Query Param:   ?api_key={api_key}
 ================================================================================
 """
     # Print directly to standard output so it is immediately visible on console
@@ -163,7 +161,6 @@ def extract_api_key_from_request(request: Request) -> Optional[str]:
     Extracts API key from a request checking:
     1. X-API-Key header
     2. Authorization: Bearer <key>
-    3. api_key or token query parameter
     """
     # 1. Check X-API-Key header
     header_key = request.headers.get("X-API-Key")
@@ -179,18 +176,12 @@ def extract_api_key_from_request(request: Request) -> Optional[str]:
         elif len(parts) == 1:
             return parts[0].strip()
 
-    # 3. Check query parameters
-    query_key = request.query_params.get("api_key") or request.query_params.get("token")
-    if query_key:
-        return query_key.strip()
-
     return None
 
 
 async def get_api_key(
     header_key: Optional[str] = Security(api_key_header_scheme),
     bearer_creds: Optional[HTTPAuthorizationCredentials] = Security(http_bearer_scheme),
-    query_key: Optional[str] = Security(api_key_query_scheme),
 ) -> str:
     """
     FastAPI security dependency for OpenAPI Swagger documentation and endpoint protection.
@@ -201,7 +192,6 @@ async def get_api_key(
     key_candidate = (
         header_key
         or (bearer_creds.credentials if bearer_creds else None)
-        or query_key
     )
 
     if is_valid_api_key(key_candidate):

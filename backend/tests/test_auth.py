@@ -148,12 +148,11 @@ class TestAPIAuthenticationEnforcement(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), {"status": "authenticated"})
 
-    def test_authenticated_with_query_parameter(self):
-        """Test request with ?api_key=<key> query parameter succeeds with 200."""
+    def test_query_parameter_rejected_for_http(self):
+        """Test request with ?api_key=<key> query parameter is rejected with 401 for HTTP endpoints."""
         with patch.object(settings, "API_KEY_AUTH_ENABLED", True):
             response = self.client.get(f"/api/auth/verify?api_key={self.valid_key}")
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json(), {"status": "authenticated"})
+            self.assertEqual(response.status_code, 401)
 
     def test_invalid_key_returns_401(self):
         """Test request with invalid key returns 401."""
