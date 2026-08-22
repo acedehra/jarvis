@@ -36,6 +36,7 @@ class TelegramBotService:
         self.application: Optional[Application] = None
         self._is_running: bool = False
         self.last_error: Optional[str] = None
+        self.voice_sessions: set[int] = set()
 
     def is_authorized(self, chat_id: int) -> bool:
         """
@@ -84,8 +85,12 @@ class TelegramBotService:
             self.application.add_handler(CommandHandler("help", self._handle_help))
             self.application.add_handler(CommandHandler("reset", self._handle_reset))
             self.application.add_handler(CommandHandler("status", self._handle_status))
+            self.application.add_handler(CommandHandler("voice", self._handle_voice_toggle))
             self.application.add_handler(
                 MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
+            )
+            self.application.add_handler(
+                MessageHandler(filters.VOICE, self._handle_incoming_voice)
             )
 
             # Start Polling
@@ -163,7 +168,8 @@ class TelegramBotService:
             "• `/start` - Introduction and Chat ID\n"
             "• `/help` - Show this guide\n"
             "• `/reset` - Clear current conversation thread memory\n"
-            "• `/status` - Check assistant and tracking system status\n\n"
+            "• `/status` - Check assistant and tracking system status\n"
+            "• `/voice` - Toggle audio voice note replies on/off\n\n"
             "📝 *Tracking & Math Examples:*\n"
             "• _'Filled up 11.5 gal of gas for $42 at Shell'_\n"
             "• _'How much did I spend on gas this month?'_\n"
@@ -174,6 +180,22 @@ class TelegramBotService:
             "• _'Mark task #1 as completed'_"
         )
         await update.message.reply_text(help_text, parse_mode="Markdown")
+
+    async def _handle_voice_toggle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.effective_chat.id
+        if not self.is_authorized(chat_id):
+            return
+
+        if chat_id in self.voice_sessions:
+            self.voice_sessions.remove(chat_id)
+            await update.message.reply_text("🔇 *Voice replies disabled.* J.A.R.V.I.S. will reply with text messages.", parse_mode="Markdown")
+        else:
+            self.voice_sessions.add(chat_id)
+            await update.message.reply_text(
+                "🎙️ *Voice replies enabled.* J.A.R.V.I.S. will now transmit spoken audio notes with responses.\n"
+                f"Using British voice: `{settings.TTS_VOICE}`.",
+                parse_mode="Markdown"
+            )
 
     async def _handle_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
@@ -199,6 +221,7 @@ class TelegramBotService:
             from app.services.tracker import get_collections_summary
             from app.services.tools import tools as builtin_tools, TOOL_METADATA
             from app.services.mcp import mcp_manager
+            from app.services.tts_service import check_tts_health
 
             summary = await get_collections_summary()
             summary_lines = []
@@ -214,10 +237,16 @@ class TelegramBotService:
             for mt in mcp_tools:
                 tool_lines.append(f"• 🔌 `{mt.name}`")
 
+            tts_health = await check_tts_health()
+            tts_status_label = "Online 🟢" if tts_health.get("status") == "connected" else f"Offline 🔴 ({tts_health.get('error', 'unreachable')})"
+            voice_enabled_label = "Active 🎙️" if (chat_id in self.voice_sessions or settings.TELEGRAM_VOICE_REPLY) else "Off 🔇 (/voice to toggle)"
+
             status_text = (
                 "🤖 *J.A.R.V.I.S. System Status*\n\n"
                 "• *Status:* Online & Active 🟢\n"
                 f"• *Default Provider:* `{settings.DEFAULT_PROVIDER}`\n"
+                f"• *Kokoro TTS Service:* {tts_status_label}\n"
+                f"• *Voice Replies:* {voice_enabled_label}\n"
                 f"• *Available Tools ({len(builtin_tools) + len(mcp_tools)}):*\n" +
                 ("\n".join(tool_lines) if tool_lines else "• _No tools registered._") +
                 "\n\n📊 *Tracked Database Records:*\n" +
@@ -226,6 +255,21 @@ class TelegramBotService:
             await update.message.reply_text(status_text, parse_mode="Markdown")
         except Exception as e:
             await update.message.reply_text(f"Status: Online 🟢 (Failed to fetch details: {e})")
+
+    async def _handle_incoming_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Handles incoming voice messages by informing the user and encouraging text or voice mode.
+        """
+        if not update.message:
+            return
+        chat_id = update.effective_chat.id
+        if not self.is_authorized(chat_id):
+            return
+
+        await update.message.reply_text(
+            "🎙️ *Voice Note Received.* For optimal transcription accuracy with current tools, please send text instructions or enable voice replies via `/voice`.",
+            parse_mode="Markdown"
+        )
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.text:
@@ -285,11 +329,29 @@ class TelegramBotService:
             if not bot_reply:
                 bot_reply = "I processed your request, but had no text output to display."
 
-            # Send reply to Telegram (try markdown first, fall back to plain text if markdown formatting errors)
+            # Send text reply to Telegram (try markdown first, fall back to plain text if markdown formatting errors)
             try:
                 await update.message.reply_text(bot_reply, parse_mode="Markdown")
             except Exception:
                 await update.message.reply_text(bot_reply)
+
+            # Check if voice replies are enabled globally or for this chat session
+            is_voice_enabled = settings.TELEGRAM_VOICE_REPLY or (chat_id in self.voice_sessions)
+            if is_voice_enabled and bot_reply:
+                try:
+                    import io
+                    from app.services.tts_service import generate_speech
+                    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+                    audio_bytes = await generate_speech(bot_reply)
+                    if audio_bytes:
+                        audio_stream = io.BytesIO(audio_bytes)
+                        audio_stream.name = "jarvis_voice.mp3"
+                        await update.message.reply_voice(
+                            voice=audio_stream,
+                            caption="🎙️ J.A.R.V.I.S."
+                        )
+                except Exception as tts_err:
+                    logger.warning(f"Failed to generate Telegram voice reply: {tts_err}")
 
             # Trigger long-term memory reflection asynchronously in the background
             asyncio.create_task(extract_memories_async(messages, user_id="default_user"))

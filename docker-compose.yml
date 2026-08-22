@@ -33,10 +33,23 @@ services:
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-jarvis-backend}
       - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
+      - TTS_BASE_URL=${TTS_BASE_URL:-http://tts:8880}
+      - TTS_VOICE=${TTS_VOICE:-bm_george}
+      - TTS_SPEED=${TTS_SPEED:-1.0}
+      - TELEGRAM_VOICE_REPLY=${TELEGRAM_VOICE_REPLY:-false}
     volumes:
       - ./backend_data:/app/data
     depends_on:
       - postgres
+      - tts
+
+  tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    ports:
+      - "8880:8880"
+    environment:
+      - DEFAULT_VOICE=bm_george
+    restart: unless-stopped
 
   postgres:
     image: pgvector/pgvector:pg16
