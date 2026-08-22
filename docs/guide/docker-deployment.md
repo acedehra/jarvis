@@ -27,25 +27,29 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+  tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
     restart: always
-    env_file: ./backend/.env
+    ports:
+      - "8880:8880"
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-jarvis}
+      - DEFAULT_VOICE=bm_george
+
+  backend:
+    image: ghcr.io/acedehra/jarvis-backend:${TAG:-latest}
+    restart: always
+    env_file: .env
+    ports:
+      - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
+      - tts
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/acedehra/jarvis-frontend:${TAG:-latest}
     restart: always
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
     depends_on:
@@ -53,6 +57,7 @@ services:
 
 volumes:
   postgres_data:
+  backend_data:
 ```
 
 ---

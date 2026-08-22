@@ -35,6 +35,9 @@ features:
   - icon: 📱
     title: Bidirectional Telegram Gateway
     details: Talk with J.A.R.V.I.S. on the go with two-way messaging, real-time tool execution, and background scheduled reminder alerts.
+  - icon: 🎙️
+    title: Authentic British Voice (Kokoro TTS)
+    details: CPU-efficient neural speech synthesis (~350MB RAM) with Paul Bettany's J.A.R.V.I.S. persona, web audio controls, and Telegram voice notes.
 ---
 
 <style>

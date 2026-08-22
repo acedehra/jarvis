@@ -35,10 +35,21 @@ All settings for J.A.R.V.I.S. are defined via environment variables loaded in `b
 | :--- | :--- | :--- | :--- |
 | `TELEGRAM_BOT_TOKEN` | `string` | `""` | Bot token obtained from Telegram `@BotFather` |
 | `TELEGRAM_CHAT_ID` | `string` | `""` | Your verified Telegram User/Chat ID for security whitelisting |
+| `TELEGRAM_VOICE_REPLY` | `boolean` | `false` | When `true`, automatically attaches spoken voice notes in Telegram |
 
 ---
 
-### 4. Server & Security
+### 4. Text-to-Speech (TTS) & Voice
+
+| Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `TTS_BASE_URL` | `string` | `http://localhost:8880` | URL of the Kokoro TTS service (`http://tts:8880` in Docker) |
+| `TTS_VOICE` | `string` | `bm_george` | Default Kokoro voice ID (`bm_george` for J.A.R.V.I.S.) |
+| `TTS_SPEED` | `float` | `1.0` | Playback speed multiplier (`0.5` - `2.0`) |
+
+---
+
+### 5. Server & Security
 
 | Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
