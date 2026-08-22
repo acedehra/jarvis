@@ -201,6 +201,9 @@ app.include_router(tracker_router, prefix="/api/tracker", tags=["Tracker"], depe
 from app.api.telegram_routes import router as telegram_router
 app.include_router(telegram_router, prefix="/api/telegram", tags=["Telegram"], dependencies=[Depends(get_api_key)])
 
+from app.api.tts_routes import router as tts_router
+app.include_router(tts_router, prefix="/api/tts", tags=["TTS"], dependencies=[Depends(get_api_key)])
+
 
 
 @app.get("/api/health", tags=["Health"])
@@ -312,7 +315,11 @@ async def health_check(response: Response):
         "configured_providers": configured_providers,
     }
 
-    # 6. Set response status code based strictly on critical database probe
+    # 6. Kokoro TTS Service Status (Informational)
+    from app.services.tts_service import check_tts_health
+    tts_info = await check_tts_health()
+
+    # 7. Set response status code based strictly on critical database probe
     if not db_connected:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         overall_status = "unhealthy"
@@ -328,6 +335,7 @@ async def health_check(response: Response):
             "database": db_health,
             "authentication": auth_info,
             "telegram": telegram_info,
+            "tts": tts_info,
             "mcp": mcp_info,
             "llm_providers": llm_info,
         }

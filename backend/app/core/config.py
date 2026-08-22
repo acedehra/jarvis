@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     CHECKPOINT_RETENTION_HOURS: int = 24
     CHECKPOINT_CLEANUP_INTERVAL_HOURS: int = 1
 
+    # Kokoro Text-to-Speech (TTS) Configuration
+    TTS_BASE_URL: str = "http://localhost:8880"
+    TTS_VOICE: str = "bm_george"
+    TTS_SPEED: float = 1.0
+
+    # Telegram Voice Replies
+    TELEGRAM_VOICE_REPLY: bool = False
+
     # CORS Allowed Origins
     CORS_ORIGINS: list[str] = ["*"]
 

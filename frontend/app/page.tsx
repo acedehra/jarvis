@@ -28,7 +28,9 @@ import {
   Server,
   Layers,
   Lock,
-  LogOut
+  LogOut,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -177,6 +179,26 @@ export function CodeBlock({ language, value }: CodeBlockProps) {
   );
 }
 
+function cleanTextForSpeech(text: string): string {
+  if (!text) return "";
+  let clean = String(text);
+  // Strip code blocks and replace with brief cue
+  clean = clean.replace(/```[\w\-]*\n[\s\S]*?\n```/g, " (code omitted) ");
+  clean = clean.replace(/```[\s\S]*?```/g, " (code omitted) ");
+  clean = clean.replace(/`([^`]+)`/g, "$1");
+  clean = clean.replace(/!\[([^\]]*)\]\([^\)]+\)/g, "");
+  clean = clean.replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1");
+  clean = clean.replace(/https?:\/\/[^\s]+/g, "link");
+  clean = clean.replace(/\|[^\n]+\|/g, " ");
+  clean = clean.replace(/^[|\-:\s]+$/gm, "");
+  clean = clean.replace(/^\s*#{1,6}\s+/gm, "");
+  clean = clean.replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, "$1");
+  clean = clean.replace(/^\s*>\s*/gm, "");
+  clean = clean.replace(/^\s*[\*\-•]\s+/gm, "");
+  clean = clean.replace(/\s+/g, " ").trim();
+  return clean;
+}
+
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authChecked, setAuthChecked] = useState<boolean>(false);
@@ -195,6 +217,104 @@ export default function Home() {
   
   const [pendingApproval, setPendingApproval] = useState<{ toolCalls: any[] } | null>(null);
   const [draftMessage, setDraftMessage] = useState("");
+
+  // Kokoro TTS Audio Controls & State
+  const [autoSpeak, setAutoSpeak] = useState<boolean>(false);
+  const [activeAudioMsgId, setActiveAudioMsgId] = useState<string | null>(null);
+  const [loadingAudioMsgId, setLoadingAudioMsgId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const autoSpeakRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    autoSpeakRef.current = autoSpeak;
+  }, [autoSpeak]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("jarvis_auto_speak");
+    if (saved === "true") {
+      setAutoSpeak(true);
+      autoSpeakRef.current = true;
+    }
+  }, []);
+
+  const toggleAutoSpeak = () => {
+    setAutoSpeak((prev) => {
+      const next = !prev;
+      autoSpeakRef.current = next;
+      localStorage.setItem("jarvis_auto_speak", String(next));
+      return next;
+    });
+  };
+
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    setActiveAudioMsgId(null);
+    setLoadingAudioMsgId(null);
+  }, []);
+
+  const playSpeech = useCallback(async (text: string, messageId?: string) => {
+    if (!text) return;
+    const clean = cleanTextForSpeech(text);
+    if (!clean) return;
+
+    if (messageId && activeAudioMsgId === messageId) {
+      stopAudio();
+      return;
+    }
+
+    stopAudio();
+    if (messageId) {
+      setLoadingAudioMsgId(messageId);
+    }
+
+    try {
+      const res = await authFetch(`${getApiBaseUrl()}/api/tts/speak`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean, response_format: "mp3" }),
+      });
+
+      if (!res.ok) {
+        console.warn("TTS generation failed:", res.statusText);
+        setLoadingAudioMsgId(null);
+        return;
+      }
+
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+
+      if (messageId) {
+        setActiveAudioMsgId(messageId);
+        setLoadingAudioMsgId(null);
+      }
+
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        setActiveAudioMsgId(null);
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+        }
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        setActiveAudioMsgId(null);
+        setLoadingAudioMsgId(null);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.error("Error playing TTS audio:", err);
+      setActiveAudioMsgId(null);
+      setLoadingAudioMsgId(null);
+    }
+  }, [activeAudioMsgId, stopAudio]);
 
   const handleApprovalAction = (action: "approve" | "reject" | "modify") => {
     if (!ws || !isConnected) return;
@@ -449,6 +569,20 @@ export default function Home() {
             localStorage.setItem("jarvis_threads", JSON.stringify(updated));
             return updated;
           });
+        } else if (data.type === "done") {
+          setIsThinking(false);
+          if (autoSpeakRef.current) {
+            setThreads((prevThreads) => {
+              const active = prevThreads.find((t) => t.id === activeThreadId);
+              if (active && active.messages.length > 0) {
+                const lastMsg = active.messages[active.messages.length - 1];
+                if (lastMsg && lastMsg.sender === "bot" && lastMsg.text) {
+                  playSpeech(lastMsg.text, lastMsg.id);
+                }
+              }
+              return prevThreads;
+            });
+          }
         } else if (data.type === "error") {
           setThreads((prevThreads) => {
             const updated = prevThreads.map((t) => {
@@ -679,6 +813,25 @@ export default function Home() {
               <span>MCP Servers</span>
             </button>
 
+            {/* Auto-Speak Kokoro TTS Toggle */}
+            <button
+              onClick={toggleAutoSpeak}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
+                autoSpeak
+                  ? "bg-teal-500/20 border-teal-500/50 text-teal-300 shadow-sm shadow-teal-500/20"
+                  : "bg-slate-800/60 hover:bg-slate-700/60 border-slate-700/40 text-slate-400"
+              }`}
+              title={autoSpeak ? "Auto-Speak is ON: J.A.R.V.I.S. speaks responses aloud" : "Auto-Speak is OFF: Click to enable voice readout"}
+            >
+              {autoSpeak ? (
+                <Volume2 className="w-3.5 h-3.5 text-teal-400 animate-pulse" />
+              ) : (
+                <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+              )}
+              <span>Auto-Speak</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${autoSpeak ? "bg-teal-400" : "bg-slate-600"}`} />
+            </button>
+
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/40 border border-slate-700/40 text-xs">
               {isConnected ? <><Wifi className="w-3 h-3 text-emerald-400 animate-pulse" /><span className="text-emerald-400 font-medium text-[11px]">Connected</span></> : <><WifiOff className="w-3 h-3 text-rose-400" /><span className="text-rose-400 font-medium text-[11px]">Offline</span></>}
               {!isConnected && <button onClick={connectWebSocket} disabled={isConnecting} className="ml-1.5"><RefreshCw className={`w-3 h-3 ${isConnecting ? "animate-spin" : ""}`} /></button>}
@@ -816,16 +969,50 @@ export default function Home() {
                           : (message.text as unknown as Record<string, string>).text || JSON.stringify(message.text)
                         }
                       </ReactMarkdown>
-                      {message.tokenUsage && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center gap-1.5 text-[10px] text-slate-500 font-mono select-none">
-                          <Zap className="w-3 h-3 text-amber-400/80 animate-pulse" />
-                          <span className="font-semibold text-slate-400">Tokens: {message.tokenUsage.totalTokens}</span>
-                          <span className="text-slate-700">•</span>
-                          <span>Prompt: {message.tokenUsage.inputTokens}</span>
-                          <span className="text-slate-700">•</span>
-                          <span>Completion: {message.tokenUsage.outputTokens}</span>
-                        </div>
-                      )}
+                      <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2 text-[10px] text-slate-500 font-mono select-none">
+                        {message.tokenUsage ? (
+                          <div className="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
+                            <Zap className="w-3 h-3 text-amber-400/80 animate-pulse flex-shrink-0" />
+                            <span className="font-semibold text-slate-400">Tokens: {message.tokenUsage.totalTokens}</span>
+                            <span className="text-slate-700">•</span>
+                            <span>Prompt: {message.tokenUsage.inputTokens}</span>
+                            <span className="text-slate-700">•</span>
+                            <span>Completion: {message.tokenUsage.outputTokens}</span>
+                          </div>
+                        ) : (
+                          <div />
+                        )}
+
+                        <button
+                          onClick={() => {
+                            const raw = typeof message.text === "string" ? message.text : JSON.stringify(message.text);
+                            playSpeech(raw, message.id);
+                          }}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-sans font-medium transition-all cursor-pointer flex-shrink-0 ${
+                            activeAudioMsgId === message.id
+                              ? "bg-teal-500/20 text-teal-300 border border-teal-500/50 shadow-sm shadow-teal-500/20"
+                              : "bg-slate-800/60 hover:bg-slate-700/60 text-slate-400 hover:text-teal-300 border border-slate-700/40"
+                          }`}
+                          title={activeAudioMsgId === message.id ? "Stop voice readout" : "Read aloud with J.A.R.V.I.S. voice"}
+                        >
+                          {loadingAudioMsgId === message.id ? (
+                            <>
+                              <RefreshCw className="w-3 h-3 animate-spin text-teal-400" />
+                              <span>Synthesizing...</span>
+                            </>
+                          ) : activeAudioMsgId === message.id ? (
+                            <>
+                              <Volume2 className="w-3 h-3 text-teal-400 animate-pulse" />
+                              <span>Speaking</span>
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="w-3 h-3 text-slate-400" />
+                              <span>Speak</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )
                 )}
