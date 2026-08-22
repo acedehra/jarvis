@@ -20,8 +20,9 @@ class TestTTSServiceAndRoutes(unittest.TestCase):
 
     def test_clean_text_for_speech(self):
         markdown_text = """
-        # Good Evening Sir!
-        Here is your **daily** summary:
+        # Good Evening Sir! 🤖
+        Here is your **daily** summary: 🌤️
+        💰 Expense: $10 at Shell ⛽
         ```python
         def run():
             pass
@@ -35,8 +36,13 @@ class TestTTSServiceAndRoutes(unittest.TestCase):
         self.assertNotIn("```", cleaned)
         self.assertNotIn("#", cleaned)
         self.assertNotIn("**", cleaned)
+        self.assertNotIn("💰", cleaned)
+        self.assertNotIn("🌤️", cleaned)
+        self.assertNotIn("⛽", cleaned)
+        self.assertNotIn("🤖", cleaned)
         self.assertIn("Good Evening Sir!", cleaned)
         self.assertIn("daily summary", cleaned)
+        self.assertIn("Expense: $10 at Shell", cleaned)
         self.assertIn("this link", cleaned)
 
     def test_list_voices_endpoint(self):

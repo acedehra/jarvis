@@ -195,6 +195,9 @@ function cleanTextForSpeech(text: string): string {
   clean = clean.replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, "$1");
   clean = clean.replace(/^\s*>\s*/gm, "");
   clean = clean.replace(/^\s*[\*\-•]\s+/gm, "");
+  // Strip all Unicode emojis and symbols (e.g. 💰, 🌤️, ⛽) so TTS does not speak out emoji names
+  clean = clean.replace(/\p{Extended_Pictographic}/gu, "");
+  clean = clean.replace(/[\u{10000}-\u{10ffff}\u{2600}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{FE00}-\u{FE0F}\u{200D}]/gu, "");
   clean = clean.replace(/\s+/g, " ").trim();
   return clean;
 }
