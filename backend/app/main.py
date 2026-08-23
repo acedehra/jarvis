@@ -7,7 +7,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from app.core.config import settings
 from app.core.auth import init_api_key, APIKeyAuthMiddleware, verify_ws_auth, get_api_key, get_active_api_key
 from app.services.graph import graph
@@ -562,7 +562,6 @@ async def websocket_chat(
                         )
                     elif action == "reject":
                         # Resume with a tool message rejection
-                        from langchain_core.messages import ToolMessage
                         rejections = [
                             ToolMessage(
                                 content="Tool execution rejected by user.",
@@ -578,7 +577,6 @@ async def websocket_chat(
                         )
                     elif action == "modify":
                         # Overwrite the message argument inside graph state
-                        from langchain_core.messages import AIMessage
                         modified_args = decision.get("modified_args", {})
                         
                         new_tool_calls = []
