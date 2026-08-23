@@ -1,10 +1,18 @@
 import asyncio
+import json
 import logging
 from typing import Optional
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from langchain_core.messages import HumanMessage, AIMessage
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from app.core.config import settings
 
 logger = logging.getLogger("telegram_service")
@@ -80,12 +88,15 @@ class TelegramBotService:
             logger.info(f"✅ Telegram Bot connected successfully as @{me.username} (ID: {me.id}).")
             logger.info(f"🔒 Telegram Bot is restricted to Chat ID: {chat_id}")
 
-            # Register Command & Message Handlers
+            # Register Command, Message & Callback Query Handlers
             self.application.add_handler(CommandHandler("start", self._handle_start))
             self.application.add_handler(CommandHandler("help", self._handle_help))
             self.application.add_handler(CommandHandler("reset", self._handle_reset))
             self.application.add_handler(CommandHandler("status", self._handle_status))
             self.application.add_handler(CommandHandler("voice", self._handle_voice_toggle))
+            self.application.add_handler(
+                CallbackQueryHandler(self._handle_callback_query)
+            )
             self.application.add_handler(
                 MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message)
             )
@@ -309,6 +320,32 @@ class TelegramBotService:
             # Invoke the LangGraph agent
             result = await graph.ainvoke(inputs, config=config)
             
+            # Check if graph reached an interrupt requiring user approval (e.g. sensitive_tools)
+            state = await graph.aget_state(config)
+            if state.next and state.next[0] == "sensitive_tools":
+                last_message = state.values["messages"][-1]
+                tool_calls = getattr(last_message, "tool_calls", [])
+                
+                tool_descriptions = []
+                for tc in tool_calls:
+                    args_str = json.dumps(tc.get("args", {}), indent=2)
+                    tool_descriptions.append(f"• *Tool:* `{tc['name']}`\n• *Arguments:*\n```json\n{args_str}\n```")
+                
+                approval_prompt = (
+                    "⚠️ *Action Confirmation Required*\n\n"
+                    "J.A.R.V.I.S. requested to execute a sensitive action:\n\n"
+                    + "\n\n".join(tool_descriptions) +
+                    "\n\nPlease choose whether to approve or reject this execution:"
+                )
+                keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("✅ Approve", callback_data=f"approve:{session_id}"),
+                        InlineKeyboardButton("❌ Reject", callback_data=f"reject:{session_id}"),
+                    ]
+                ])
+                await update.message.reply_text(approval_prompt, reply_markup=keyboard, parse_mode="Markdown")
+                return
+            
             # Extract final AI response
             bot_reply = ""
             messages = result.get("messages", [])
@@ -359,6 +396,103 @@ class TelegramBotService:
         except Exception as e:
             logger.error(f"Error processing Telegram message: {e}", exc_info=True)
             await update.message.reply_text(f"⚠️ Sorry, an error occurred while processing your request: {str(e)}")
+
+    async def _handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Handles interactive Approve/Reject button clicks for sensitive tool executions.
+        """
+        query = update.callback_query
+        if not query or not query.data:
+            return
+
+        chat_id = update.effective_chat.id
+        if not self.is_authorized(chat_id):
+            await query.answer("⛔ Access Denied.", show_alert=True)
+            return
+
+        await query.answer()
+
+        try:
+            from app.services.graph import graph
+            from app.services.memory_reflection import extract_memories_async
+
+            data = query.data
+            if ":" not in data:
+                return
+            action, session_id = data.split(":", 1)
+            config = {"configurable": {"thread_id": session_id}}
+
+            state = await graph.aget_state(config)
+            if not state.next or state.next[0] != "sensitive_tools":
+                await query.edit_message_text("ℹ️ This action has already been resolved or expired.")
+                return
+
+            last_message = state.values["messages"][-1]
+            tool_calls = getattr(last_message, "tool_calls", [])
+
+            if action == "approve":
+                await query.edit_message_text("⏳ *Executing approved action...*", parse_mode="Markdown")
+                result = await graph.ainvoke(None, config=config)
+
+                bot_reply = ""
+                messages = result.get("messages", [])
+                for m in reversed(messages):
+                    if isinstance(m, AIMessage) and m.content:
+                        if isinstance(m.content, str):
+                            bot_reply = m.content
+                        elif isinstance(m.content, list):
+                            parts = []
+                            for p in m.content:
+                                if isinstance(p, str):
+                                    parts.append(p)
+                                elif isinstance(p, dict):
+                                    parts.append(p.get("text", ""))
+                            bot_reply = "".join(parts)
+                        break
+
+                if not bot_reply:
+                    bot_reply = "Action successfully executed."
+
+                await query.edit_message_text(f"✅ *Action Approved & Completed*\n\n{bot_reply}", parse_mode="Markdown")
+                asyncio.create_task(extract_memories_async(messages, user_id="default_user"))
+
+            elif action == "reject":
+                await query.edit_message_text("❌ *Action Rejected.* Processing cancellation...", parse_mode="Markdown")
+                rejections = [
+                    ToolMessage(
+                        content="Tool execution rejected by user.",
+                        tool_call_id=tc["id"],
+                        name=tc["name"]
+                    ) for tc in tool_calls
+                ]
+                await graph.aupdate_state(config, {"messages": rejections}, as_node="sensitive_tools")
+                result = await graph.ainvoke(None, config=config)
+
+                bot_reply = ""
+                messages = result.get("messages", [])
+                for m in reversed(messages):
+                    if isinstance(m, AIMessage) and m.content:
+                        if isinstance(m.content, str):
+                            bot_reply = m.content
+                        elif isinstance(m.content, list):
+                            parts = []
+                            for p in m.content:
+                                if isinstance(p, str):
+                                    parts.append(p)
+                                elif isinstance(p, dict):
+                                    parts.append(p.get("text", ""))
+                            bot_reply = "".join(parts)
+                        break
+
+                if not bot_reply:
+                    bot_reply = "Action was cancelled as requested."
+
+                await query.edit_message_text(f"❌ *Action Cancelled*\n\n{bot_reply}", parse_mode="Markdown")
+                asyncio.create_task(extract_memories_async(messages, user_id="default_user"))
+
+        except Exception as e:
+            logger.error(f"Error handling Telegram callback query: {e}", exc_info=True)
+            await query.edit_message_text(f"⚠️ Error processing action: {str(e)}")
 
 
 telegram_bot = TelegramBotService()

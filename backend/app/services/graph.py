@@ -1,5 +1,12 @@
 from typing import Annotated, Sequence, TypedDict, Optional
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import (
+    BaseMessage,
+    SystemMessage,
+    HumanMessage,
+    AIMessage,
+    ToolMessage,
+    RemoveMessage,
+)
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -18,6 +25,103 @@ class AgentState(TypedDict):
 
 from langgraph.store.base import BaseStore
 from app.core.database import get_store
+
+def sanitize_messages_for_llm(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
+    """
+    Sanitizes and normalizes conversation history before passing to LLM providers
+    (specifically Google Gemini) to guarantee strict adherence to turn invariants:
+    1. System messages are placed at the beginning.
+    2. The conversational turns must start with a HumanMessage (user turn).
+    3. Every AIMessage with tool_calls must immediately follow a user turn (HumanMessage)
+       or a function response turn (ToolMessage).
+    4. Every tool_call in an AIMessage must be followed by its matching ToolMessage.
+       Unresponded/interrupted tool calls are cleaned up so dangling function calls do not crash future turns.
+    5. Orphaned ToolMessages (without a preceding matching AIMessage) are discarded.
+    """
+    if not messages:
+        return []
+
+    system_msgs: list[BaseMessage] = []
+    non_system_msgs: list[BaseMessage] = []
+
+    for m in messages:
+        if isinstance(m, SystemMessage):
+            system_msgs.append(m)
+        else:
+            non_system_msgs.append(m)
+
+    if not non_system_msgs:
+        return system_msgs
+
+    # Build a lookup of tool_call_id -> ToolMessage
+    tool_message_map: dict[str, ToolMessage] = {}
+    for m in non_system_msgs:
+        if isinstance(m, ToolMessage) and getattr(m, "tool_call_id", None):
+            tool_message_map[str(m.tool_call_id)] = m
+
+    sanitized_chat: list[BaseMessage] = []
+
+    for m in non_system_msgs:
+        if isinstance(m, HumanMessage):
+            sanitized_chat.append(m)
+
+        elif isinstance(m, AIMessage):
+            if m.tool_calls:
+                # Check preceding message: must be HumanMessage or ToolMessage
+                if not sanitized_chat or isinstance(sanitized_chat[-1], AIMessage):
+                    sanitized_chat.append(HumanMessage(content="[Continue]"))
+
+                # Check which tool_calls actually have matching ToolMessages
+                valid_tool_calls = [
+                    tc for tc in m.tool_calls
+                    if str(tc.get("id", "")) in tool_message_map
+                ]
+
+                if not valid_tool_calls:
+                    # Unanswered tool call from previous interrupted turn -> convert to text message
+                    fallback_text = m.content if m.content else "[Action completed or interrupted]"
+                    sanitized_chat.append(AIMessage(content=fallback_text, id=m.id))
+                else:
+                    # Retain only answered tool calls
+                    new_ai = AIMessage(
+                        content=m.content,
+                        tool_calls=valid_tool_calls,
+                        id=m.id,
+                        response_metadata=getattr(m, "response_metadata", {}),
+                        additional_kwargs=getattr(m, "additional_kwargs", {})
+                    )
+                    sanitized_chat.append(new_ai)
+            else:
+                sanitized_chat.append(m)
+
+        elif isinstance(m, ToolMessage):
+            # Only keep ToolMessage if preceded by an AIMessage with matching tool_call_id
+            # or preceded by another valid ToolMessage for the same parent turn
+            if sanitized_chat:
+                last = sanitized_chat[-1]
+                if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+                    matching_ids = {str(tc.get("id", "")) for tc in last.tool_calls}
+                    if str(getattr(m, "tool_call_id", "")) in matching_ids:
+                        sanitized_chat.append(m)
+                elif isinstance(last, ToolMessage):
+                    # Search backward for the parent AIMessage
+                    for prev in reversed(sanitized_chat):
+                        if isinstance(prev, AIMessage):
+                            matching_ids = {str(tc.get("id", "")) for tc in (getattr(prev, "tool_calls", None) or [])}
+                            if str(getattr(m, "tool_call_id", "")) in matching_ids:
+                                sanitized_chat.append(m)
+                            break
+
+    # Ensure conversation starts with a HumanMessage
+    while sanitized_chat and not isinstance(sanitized_chat[0], HumanMessage):
+        sanitized_chat.insert(0, HumanMessage(content="Hello"))
+        break
+
+    if not sanitized_chat:
+        sanitized_chat = [HumanMessage(content="Hello")]
+
+    return system_msgs + sanitized_chat
+
 
 async def call_model(state: AgentState, *, store: BaseStore):
     """
@@ -122,8 +226,8 @@ async def call_model(state: AgentState, *, store: BaseStore):
         )
     )
     
-    # Prepend the system message to messages
-    full_messages = [system_message] + list(messages)
+    # Prepend the system message and sanitize turns for strict LLM turn order compliance
+    full_messages = sanitize_messages_for_llm([system_message] + list(messages))
     
     # Invoke the model with tools (using async invoke as the node is async)
     response = await llm_with_tools.ainvoke(full_messages)
@@ -134,15 +238,26 @@ async def summarize_conversation(state: AgentState):
     """
     Node that summarizes the oldest messages when history grows too long,
     storing the summary in the state and removing the summarized messages.
+    Uses turn-aware boundaries so that complete turns (user + tool calls + responses + AI)
+    are summarized together without splitting tool call pairs.
     """
     messages = state["messages"]
     
     # We summarize if the conversation is long (exceeds 6 messages).
-    # Keep the last 4 messages, and summarize the rest.
     if len(messages) <= 6:
         return {}
+
+    # Find a clean turn boundary: the retained messages should start with a HumanMessage
+    split_idx = -1
+    for idx in range(len(messages) - 4, 0, -1):
+        if isinstance(messages[idx], HumanMessage):
+            split_idx = idx
+            break
+
+    if split_idx <= 0:
+        return {}
         
-    messages_to_summarize = messages[:-4]
+    messages_to_summarize = messages[:split_idx]
     
     # Format the dialogue to summarize
     formatted_dialogue = []
@@ -154,7 +269,8 @@ async def summarize_conversation(state: AgentState):
             role = "Assistant"
         else:
             continue
-        formatted_dialogue.append(f"{role}: {m.content}")
+        if getattr(m, "content", None):
+            formatted_dialogue.append(f"{role}: {m.content}")
         
     dialogue_str = "\n".join(formatted_dialogue)
     if not dialogue_str.strip():
@@ -185,7 +301,7 @@ async def summarize_conversation(state: AgentState):
     
     # Create RemoveMessage instructions for the summarized messages
     from langchain_core.messages import RemoveMessage
-    remove_messages = [RemoveMessage(id=m.id) for m in messages_to_summarize if m.id]
+    remove_messages = [RemoveMessage(id=m.id) for m in messages_to_summarize if getattr(m, "id", None)]
     
     return {
         "summary": new_summary,
