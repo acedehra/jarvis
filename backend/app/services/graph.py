@@ -1,4 +1,7 @@
+import logging
 from typing import Annotated, Sequence, TypedDict, Optional
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from langchain_core.messages import (
     BaseMessage,
     SystemMessage,
@@ -10,8 +13,21 @@ from langchain_core.messages import (
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.store.base import BaseStore
+from app.core.config import settings
+from app.core.database import get_store, get_checkpointer
 from app.services.llm import get_llm_model
-from app.services.tools import tools
+from app.services.tools import (
+    tools,
+    get_weather,
+    web_search,
+    send_telegram_message,
+    save_record,
+    query_records,
+    aggregate_records,
+    manage_record,
+)
+from app.services.mcp import mcp_manager
 
 
 class AgentState(TypedDict):
@@ -23,8 +39,6 @@ class AgentState(TypedDict):
     model: Optional[str]
     summary: Optional[str]
 
-from langgraph.store.base import BaseStore
-from app.core.database import get_store
 
 def sanitize_messages_for_llm(messages: Sequence[BaseMessage]) -> list[BaseMessage]:
     """
@@ -135,7 +149,6 @@ async def call_model(state: AgentState, *, store: BaseStore):
     llm = get_llm_model(provider=provider, model_name=model_name)
     
     # Bind workspace tools and MCP tools to the LLM
-    from app.services.mcp import mcp_manager
     all_tools = list(tools) + mcp_manager.get_tools()
     llm_with_tools = llm.bind_tools(all_tools)
     
@@ -150,7 +163,6 @@ async def call_model(state: AgentState, *, store: BaseStore):
                 memory_context = "\nRemembered facts/preferences about the user:\n" + "\n".join(facts) + "\n"
         except Exception as e:
             # Safe fallback if store search fails (e.g. table not ready yet)
-            import logging
             logging.getLogger("graph").warning(f"Failed to load user memories: {e}")
 
     # Inject conversation summary context if present
@@ -160,11 +172,6 @@ async def call_model(state: AgentState, *, store: BaseStore):
         summary_context = f"\nHere is a summary of the earlier conversation history:\n{summary}\n"
 
     # Formulate a system message with the current date, time, timezone, and user memories
-    from langchain_core.messages import SystemMessage
-    from datetime import datetime, timezone
-    from zoneinfo import ZoneInfo
-    from app.core.config import settings
-
     try:
         user_tz = ZoneInfo(settings.USER_TIMEZONE)
     except Exception:
@@ -261,7 +268,6 @@ async def summarize_conversation(state: AgentState):
     
     # Format the dialogue to summarize
     formatted_dialogue = []
-    from langchain_core.messages import HumanMessage, AIMessage
     for m in messages_to_summarize:
         if isinstance(m, HumanMessage):
             role = "User"
@@ -300,7 +306,6 @@ async def summarize_conversation(state: AgentState):
     new_summary = response.content
     
     # Create RemoveMessage instructions for the summarized messages
-    from langchain_core.messages import RemoveMessage
     remove_messages = [RemoveMessage(id=m.id) for m in messages_to_summarize if getattr(m, "id", None)]
     
     return {
@@ -332,20 +337,9 @@ def should_continue(state: AgentState):
 
 
 # Set up the Langgraph state machine with safe/sensitive tool separation
-from app.services.tools import (
-    get_weather,
-    web_search,
-    send_telegram_message,
-    save_record,
-    query_records,
-    aggregate_records,
-    manage_record,
-)
 safe_tools = [get_weather, web_search, save_record, query_records, aggregate_records, manage_record]
 sensitive_tools = [send_telegram_message]
 
-from langchain_core.messages import ToolMessage
-from app.services.mcp import mcp_manager
 
 async def execute_safe_tools(state: AgentState):
     """
@@ -418,7 +412,6 @@ workflow.add_edge("sensitive_tools", "agent")
 workflow.add_edge("summarize", END)
 
 # Postgres checkpointer persistence for conversation threads and postgres for long term store
-from app.core.database import get_store, get_checkpointer
 memory = get_checkpointer()
 store = get_store()
 
