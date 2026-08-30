@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # User Timezone Configuration
     USER_TIMEZONE: str = "America/New_York"
 
+    # Pantry / Grocery
+    PANTRY_EXPIRY_ALERT_DAYS: int = 2  # days before expiry to flag an item for the alert worker
+
     # Checkpoint Retention & Auto-Cleanup
     CHECKPOINT_RETENTION_HOURS: int = 24
     CHECKPOINT_CLEANUP_INTERVAL_HOURS: int = 1

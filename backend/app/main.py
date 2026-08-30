@@ -54,6 +54,45 @@ async def reminder_worker():
         except Exception as e:
             logger.error(f"❌ Error in reminder worker loop: {e}")
 
+async def expiry_worker():
+    """
+    Background worker that periodically scans the pantry for items near their expiry date
+    and pushes a Telegram alert so food doesn't go to waste. Runs on the same cadence as
+    the reminder worker and deduplicates via data.expiry_alerted so an item alerts once.
+    """
+    from app.services.pantry import get_expiring_items, mark_expiry_alerted
+    from app.services.tools import send_telegram_message
+
+    within_days = getattr(settings, "PANTRY_EXPIRY_ALERT_DAYS", 2)
+    logger.info(f"🥫 Expiry background worker started (interval: 30s, alerts within {within_days}d).")
+    while True:
+        try:
+            await asyncio.sleep(30)
+            expiring = await get_expiring_items(within_days=within_days, include_expired=True)
+            stale = [e for e in expiring if not e["alerted"]]
+            if not stale:
+                continue
+            lines = ["🥫 PANTRY EXPIRY ALERT — please use these up:"]
+            for item in stale:
+                days = item["days_to_expiry"]
+                when = f"expired {abs(days)}d ago" if days < 0 else (f"expires in {days}d" if days == 0 else f"expires in {days} day(s)")
+                lines.append(
+                    f"• {item['name']}: {item['quantity']} {item['unit']} ({when}, {item.get('expiry')})"
+                )
+            msg = "\n".join(lines)
+            try:
+                await send_telegram_message.ainvoke({"message": msg})
+                for item in stale:
+                    await mark_expiry_alerted(item["id"])
+                logger.info(f"🥫 Dispatched expiry alert for {len(stale)} item(s).")
+            except Exception as e:
+                logger.error(f"❌ Failed to dispatch expiry alert: {e}")
+        except asyncio.CancelledError:
+            logger.info("🛑 Expiry background worker cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"❌ Error in expiry worker loop: {e}")
+
 async def checkpoint_cleanup_worker():
     """
     Background worker that runs periodically to purge stale checkpoints, blobs,
@@ -146,6 +185,7 @@ async def lifespan(app: FastAPI):
 
     # 6. Background Workers
     reminder_task = asyncio.create_task(reminder_worker())
+    expiry_task = asyncio.create_task(expiry_worker())
     cleanup_task = asyncio.create_task(checkpoint_cleanup_worker())
 
     from app.services.mcp import mcp_manager
@@ -165,8 +205,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("🛑 Shutting down background workers...")
     reminder_task.cancel()
+    expiry_task.cancel()
     cleanup_task.cancel()
-    for task in [reminder_task, cleanup_task]:
+    for task in [reminder_task, expiry_task, cleanup_task]:
         try:
             await task
         except asyncio.CancelledError:

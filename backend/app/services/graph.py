@@ -26,6 +26,11 @@ from app.services.tools import (
     query_records,
     aggregate_records,
     manage_record,
+    add_pantry_item,
+    consume_from_pantry,
+    get_pantry_inventory,
+    get_pantry_expiring,
+    get_meal_plan,
 )
 from app.services.mcp import mcp_manager
 
@@ -225,6 +230,15 @@ async def call_model(state: AgentState, *, store: BaseStore):
             f"averages, or category breakdowns (e.g. 'How much did I spend on gas?', 'How many gallons did I buy?'). Never calculate totals manually "
             f"in your head; let the database calculate it deterministically.\n"
             f"- 'manage_record': Use this to mark tasks as completed, update records, or delete them.\n\n"
+            f"* IMPORTANT - PANTRY & GROCERY INVENTORY: You have dedicated pantry & meal-planning tools. "
+            f"Use 'add_pantry_item' when the user logs groceries or stocks ingredients (auto-accumulates quantities and "
+            f"normalizes names) — always ask for / store an expiry date when the user knows it. Use 'get_pantry_inventory' "
+            f"or 'get_meal_plan' before any meal-planning / 'cook something with what I have' request to fetch the deterministic "
+            f"list of ingredients on hand (get_meal_plan also flags which items are expiring soonest), then suggest plausible "
+            f"dishes using ONLY the ingredients in stock (plus sensible staples like salt, oil, pepper), and prioritize using up "
+            f"near-expiring items first. Use 'get_pantry_expiring' when asked what's about to go bad or what to eat first. "
+            f"Use 'consume_from_pantry' to decrement ingredients when a meal is cooked. If the user wants a dish not fully covered "
+            f"by the pantry, provide a shopping list of the missing ingredients.\n\n"
             f"REAL-TIME WEATHER & FORECASTS:\n"
             f"- 'get_weather': ALWAYS use this tool whenever the user asks about current weather, temperature, forecasts, precipitation, humidity, or wind for any city or location.\n"
             f"- When presenting weather results to the user, format the response cleanly with emojis for every key metric (condition, temperature in °C and °F, humidity, wind, and forecast highlights).\n"
@@ -337,10 +351,20 @@ def should_continue(state: AgentState):
 
 
 # Set up the Langgraph state machine with safe/sensitive tool separation
-safe_tools = [get_weather, web_search, save_record, query_records, aggregate_records, manage_record]
+safe_tools = [
+    get_weather,
+    web_search,
+    save_record,
+    query_records,
+    aggregate_records,
+    manage_record,
+    add_pantry_item,
+    consume_from_pantry,
+    get_pantry_inventory,
+    get_pantry_expiring,
+    get_meal_plan,
+]
 sensitive_tools = [send_telegram_message]
-
-
 async def execute_safe_tools(state: AgentState):
     """
     Dynamically executes requested safe tools (static safe tools + registered MCP tools).

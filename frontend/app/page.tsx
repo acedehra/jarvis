@@ -34,6 +34,8 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import Link from "next/link";
+import { Package } from "lucide-react";
 import McpManagementModal from "./components/McpManagementModal";
 import TrackerModal from "./components/TrackerModal";
 import TelegramModal from "./components/TelegramModal";
@@ -783,6 +785,14 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link
+              href="/pantry"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/40 text-xs text-emerald-400 font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="Open Pantry — grocery inventory & meal planning"
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span>Pantry</span>
+            </Link>
             <button 
               onClick={() => setTrackerModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/40 text-xs text-emerald-400 font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
