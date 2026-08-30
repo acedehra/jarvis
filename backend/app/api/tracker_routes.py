@@ -182,3 +182,102 @@ async def get_gas_stats(user_id: str = Query("default_user")):
         logger.error(f"Error computing gas analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# --------------------------------------------------------------------------- Pantry endpoints
+
+@router.get("/pantry", tags=["Pantry"])
+async def get_pantry(user_id: str = Query("default_user"), include_empty: bool = Query(False)):
+    """
+    Returns the aggregated pantry inventory: one entry per normalized ingredient with total
+    quantity, unit, category, expiry, and days_to_expiry.
+    """
+    from app.services.pantry import get_pantry_inventory
+    try:
+        inv = await get_pantry_inventory(include_empty=include_empty)
+        return {"status": "success", "inventory": inv}
+    except Exception as e:
+        logger.error(f"Error fetching pantry inventory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/pantry/expiring", tags=["Pantry"])
+async def get_pantry_expiring(
+    within_days: int = Query(3, ge=0, le=60),
+    include_expired: bool = Query(True),
+    user_id: str = Query("default_user"),
+):
+    """
+    Lists pantry items expiring within `within_days` (soonest first), optionally including
+    already-expired items. Used by the frontend expiry alert strip.
+    """
+    from app.services.pantry import get_expiring_items
+    try:
+        items = await get_expiring_items(
+            within_days=within_days, include_expired=include_expired, user_id=user_id
+        )
+        return {"status": "success", "expiring": items}
+    except Exception as e:
+        logger.error(f"Error fetching expiring pantry items: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pantry", tags=["Pantry"])
+async def add_pantry(payload: RecordCreateRequest):
+    """
+    Adds an ingredient to the pantry. The payload uses the generic record schema so the frontend
+    can send {title: name, data: {quantity, unit, category, expiry}}. Quantities of an existing
+    normalized ingredient are accumulated (not duplicated).
+    """
+    from app.services.pantry import add_pantry_item
+    try:
+        name = payload.title.strip()
+        data = payload.data or {}
+        result = await add_pantry_item(
+            name=name,
+            quantity=data.get("quantity", 1),
+            unit=data.get("unit", "items"),
+            category=data.get("category"),
+            expiry=data.get("expiry"),
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        logger.error(f"Error adding pantry item: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pantry/consume", tags=["Pantry"])
+async def consume_pantry(payload: RecordUpdateRequest):
+    """
+    Consumes a quantity of an ingredient from the pantry.
+    Accepts {data: {name, quantity}} (or {status: name}). Deletes the item when it reaches zero.
+    """
+    from app.services.pantry import consume_from_pantry
+    try:
+        data = payload.data or {}
+        name = data.get("name") or payload.status or ""
+        if not name:
+            raise HTTPException(status_code=400, detail="Ingredient 'name' is required.")
+        result = await consume_from_pantry(name=name, quantity=data.get("quantity", 1))
+        return {"status": "success", "result": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error consuming pantry item: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pantry/meal-plan", tags=["Pantry"])
+async def get_pantry_meal_plan(requested: int = Query(3, ge=1, le=8)):
+    """
+    Generates a meal plan from the current pantry inventory using a structured LLM call.
+    Returns cookable meal suggestions plus any missing ingredients.
+    """
+    from app.services.meal_planner import generate_meal_plan
+    try:
+        plan = await generate_meal_plan(requested=requested)
+        return {"status": "success", "plan": plan}
+    except Exception as e:
+        logger.error(f"Error generating meal plan: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+

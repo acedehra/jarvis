@@ -531,6 +531,147 @@ async def manage_record(
     except Exception as e:
         return f"Error managing record: {str(e)}"
 
+@tool
+async def add_pantry_item(
+    name: str,
+    quantity: float = 1,
+    unit: str = "items",
+    category: Optional[str] = None,
+    expiry: Optional[str] = None
+) -> str:
+    """
+    Add an ingredient to your pantry inventory. Use this whenever the user logs groceries, stocks
+    the kitchen, or adds an ingredient they have on hand.
+
+    Quantities of the same ingredient are automatically accumulated (e.g. adding 'tomatoes 2' twice
+    becomes 4), and names are normalized so 'Tomatoes', 'tomato', and 'TOMATO' all combine into one.
+
+    Args:
+        name (str): The ingredient name (e.g. 'tomatoes', 'chicken breast', 'basil')
+        quantity (float): How much is being added (default 1). Use fractional amounts when relevant (e.g. 0.5).
+        unit (str): The unit of measure (default 'items'). Use 'kg', 'g', 'lb', 'ml', 'l', 'items', 'clove', 'can', etc.
+        category (str, optional): One of produce, dairy, meat, seafood, bakery, pantry, spice, frozen, condiment, other.
+        expiry (str, optional): ISO date (YYYY-MM-DD) for when the item expires.
+    """
+    from app.services.pantry import add_pantry_item as svc_add
+    try:
+        result = await svc_add(name=name, quantity=quantity, unit=unit, category=category, expiry=expiry)
+        return (
+            f"{result['message']}\n"
+            f"[{result['action'].upper()}] {result['name']}: {result['quantity']} {result['unit']} "
+            f"(category: {result['category']})"
+        )
+    except Exception as e:
+        return f"Error adding pantry item: {str(e)}"
+
+
+@tool
+async def consume_from_pantry(name: str, quantity: float = 1) -> str:
+    """
+    Consume a quantity of an ingredient from the pantry (e.g. when cooking a meal).
+
+    Decrements the stock and deletes the item when it reaches zero. Reports a shortfall if
+    the user tries to consume more than is available.
+
+    Args:
+        name (str): The ingredient name to consume (e.g. 'tomatoes').
+        quantity (float): How much to remove (default 1). Use the same unit the item was added in.
+    """
+    from app.services.pantry import consume_from_pantry as svc_consume
+    try:
+        result = await svc_consume(name=name, quantity=quantity)
+        return result["message"]
+    except Exception as e:
+        return f"Error consuming pantry item: {str(e)}"
+
+
+@tool
+async def get_pantry_inventory(include_empty: bool = False) -> str:
+    """
+    List everything currently in the pantry inventory, aggregated by ingredient with total quantities.
+
+    Use this before meal planning to see what ingredients you have on hand, to answer "what do I have?",
+    or to figure out what to cook. Quantities across duplicate entries are summed deterministically.
+
+    Args:
+        include_empty (bool): If true, also show ingredient records that are currently out of stock (default false).
+    """
+    from app.services.pantry import get_pantry_inventory as svc_inventory
+    try:
+        result = await svc_inventory(include_empty=include_empty)
+        if not result["items"]:
+            return "Your pantry is empty. Use add_pantry_item to stock it."
+        lines = [f"📦 Pantry inventory ({result['count']} item(s)):"]
+        for item in result["items"]:
+            expiry = f" | expiry {item['expiry']}" if item.get("expiry") else ""
+            lines.append(
+                f"- {item['name']}: {round(item['quantity'],2)} {item['unit']} "
+                f"({item['category']}){expiry}"
+            )
+        if not include_empty:
+            lines.append("Tip: pass include_empty=True to also see out-of-stock items.")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error getting pantry inventory: {str(e)}"
+
+
+@tool
+async def get_pantry_expiring(within_days: int = 3, include_expired: bool = True) -> str:
+    """
+    List pantry items that are about to expire, ordered soonest-first.
+
+    Use this when the user wants to know what's going bad soon, what to eat first, or what to
+    prioritize in meal planning. By default also includes already-expired items.
+
+    Args:
+        within_days (int): Show items expiring within this many days (default 3).
+        include_expired (bool): Also show items already past their expiry (default True).
+    """
+    from app.services.pantry import get_expiring_items
+    try:
+        items = await get_expiring_items(within_days=within_days, include_expired=include_expired)
+        if not items:
+            return f"Nothing expiring within {within_days} day(s). Pantry looks fresh."
+        lines = [f"🥫 Items expiring within {within_days} day(s):"]
+        for item in items:
+            d = item["days_to_expiry"]
+            when = f"⛔ expired {abs(d)}d ago" if d < 0 else (f"expires today!" if d == 0 else f"expires in {d}d")
+            flag = " (already alerted)" if item.get("alerted") else ""
+            lines.append(f"• {item['name']}: {item['quantity']} {item['unit']} — {when} ({item['expiry']}){flag}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error getting expiring items: {str(e)}"
+
+
+@tool
+async def get_meal_plan(limit: int = 6) -> str:
+    """
+    Get the "meal base": your current pantry stock plus what's expiring soonest, structured for
+    meal planning.
+
+    Use this for 'what can I cook?', 'suggest meals from what I have', or 'plan my meals' requests.
+    It returns the full ingredient inventory so you can propose realistic meals and pin out a
+    shopping list for anything missing.
+
+    Args:
+        limit (int): How many results to include (default 6).
+    """
+    from app.services.pantry import get_meal_plan as svc_plan
+    try:
+        plan = await svc_plan(limit=limit)
+        if plan["count"] == 0:
+            return "Your pantry is empty. Use add_pantry_item to stock it first."
+        lines = [f"🍽️  Meal base — {plan['count']} ingredient(s) on hand:"]
+        for item in plan["available_stock"]:
+            d = item.get("days_to_expiry")
+            when = f" (eat soon — {d}d left)" if d is not None and 0 <= d <= 3 else ""
+            overdue = " (overdue!)" if d is not None and d < 0 else ""
+            lines.append(f"- {item['name']}: {item['quantity']} {item['unit']}{when}{overdue}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error building meal plan: {str(e)}"
+
+
 tools = [
     get_weather,
     web_search,
@@ -538,7 +679,12 @@ tools = [
     save_record,
     query_records,
     aggregate_records,
-    manage_record
+    manage_record,
+    add_pantry_item,
+    consume_from_pantry,
+    get_pantry_inventory,
+    get_pantry_expiring,
+    get_meal_plan,
 ]
 
 TOOL_METADATA = {
@@ -583,6 +729,36 @@ TOOL_METADATA = {
         "name": "manage_record",
         "description": "Universal tracker: update status, mark completed, or delete records",
         "category": "Tracker"
+    },
+    "add_pantry_item": {
+        "emoji": "🥦",
+        "name": "add_pantry_item",
+        "description": "Add an ingredient to pantry inventory (auto-accumulates & normalizes names)",
+        "category": "Pantry"
+    },
+    "consume_from_pantry": {
+        "emoji": "🍳",
+        "name": "consume_from_pantry",
+        "description": "Consume an ingredient from pantry stock (deletes at zero, reports shortfall)",
+        "category": "Pantry"
+    },
+    "get_pantry_inventory": {
+        "emoji": "📦",
+        "name": "get_pantry_inventory",
+        "description": "List full pantry inventory aggregated by ingredient for meal planning",
+        "category": "Pantry"
+    },
+    "get_pantry_expiring": {
+        "emoji": "🥫",
+        "name": "get_pantry_expiring",
+        "description": "List pantry items about to expire, ordered soonest-first",
+        "category": "Pantry"
+    },
+    "get_meal_plan": {
+        "emoji": "🍽️",
+        "name": "get_meal_plan",
+        "description": "Meal-planning snapshot: pantry stock + what to use before it spoils",
+        "category": "Pantry"
     },
 }
 
