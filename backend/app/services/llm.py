@@ -5,6 +5,21 @@ from app.core.config import settings
 
 logger = logging.getLogger("llm_service")
 
+def get_default_model_name(provider: Optional[str] = None) -> str:
+    """
+    Returns the configured default model name for a given provider (or the global default provider).
+    """
+    prov = (provider or settings.DEFAULT_PROVIDER).lower().strip()
+    if prov == "gemini":
+        return settings.DEFAULT_GEMINI_MODEL
+    elif prov == "openai":
+        return settings.DEFAULT_OPENAI_MODEL
+    elif prov == "anthropic":
+        return settings.DEFAULT_ANTHROPIC_MODEL
+    elif prov == "openrouter":
+        return settings.DEFAULT_OPENROUTER_MODEL
+    return "unknown"
+
 def get_llm_model(provider: str, model_name: Optional[str] = None) -> BaseChatModel:
     """
     Factory function to initialize and return the correct Langchain chat model.

@@ -232,8 +232,10 @@ class TelegramBotService:
             from app.services.tracker import get_collections_summary
             from app.services.tools import tools as builtin_tools, TOOL_METADATA
             from app.services.mcp import mcp_manager
+            from app.services.llm import get_default_model_name
             from app.services.tts_service import check_tts_health
 
+            active_model = get_default_model_name()
             summary = await get_collections_summary()
             summary_lines = []
             for s in summary:
@@ -256,6 +258,7 @@ class TelegramBotService:
                 "🤖 *J.A.R.V.I.S. System Status*\n\n"
                 "• *Status:* Online & Active 🟢\n"
                 f"• *Default Provider:* `{settings.DEFAULT_PROVIDER}`\n"
+                f"• *Default Model:* `{active_model}`\n"
                 f"• *Kokoro TTS Service:* {tts_status_label}\n"
                 f"• *Voice Replies:* {voice_enabled_label}\n"
                 f"• *Available Tools ({len(builtin_tools) + len(mcp_tools)}):*\n" +

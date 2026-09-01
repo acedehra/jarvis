@@ -128,9 +128,12 @@ async def checkpoint_cleanup_worker():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.services.llm import get_default_model_name
+    active_model = get_default_model_name()
     logger.info("==========================================================")
     logger.info("🤖 Starting J.A.R.V.I.S. AI Assistant Backend...")
-    logger.info(f"⚙️  Default Provider: {settings.DEFAULT_PROVIDER} | User Timezone: {settings.USER_TIMEZONE}")
+    logger.info(f"⚙️  Default Provider: {settings.DEFAULT_PROVIDER} | Active Model: {active_model}")
+    logger.info(f"🌐 User Timezone: {settings.USER_TIMEZONE}")
     logger.info("==========================================================")
 
     # 0. API Key Authentication Initialization
