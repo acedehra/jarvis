@@ -672,6 +672,128 @@ async def get_meal_plan(limit: int = 6) -> str:
         return f"Error building meal plan: {str(e)}"
 
 
+@tool
+def random_picker(
+    options: Optional[Union[List[str], str]] = None,
+    count: int = 1,
+    with_replacement: bool = False,
+    shuffle: bool = False,
+    min_value: Optional[int] = None,
+    max_value: Optional[int] = None,
+    weights: Optional[List[float]] = None,
+) -> str:
+    """
+    Cryptographically secure random selection, number generator, list shuffler, and decision picker.
+    Uses OS-level entropy (SystemRandom) for fair and unbiased outcomes.
+
+    Use this tool when the user asks to:
+    - Pick a winner or select random item(s) from a list (e.g., giveaway, contest, lunch decision).
+    - Pick multiple winners (with or without replacement).
+    - Shuffle or randomize the order of a list of tasks, names, or items.
+    - Generate random number(s) in a range [min_value, max_value] (e.g., dice roll, lottery number).
+    - Flip a coin or make an unbiased decision.
+
+    Args:
+        options (Optional[Union[List[str], str]]): List of choices/participants, or comma-separated string.
+        count (int): How many items/numbers to pick (default 1).
+        with_replacement (bool): If True, same option can be picked multiple times. Default False (unique picks).
+        shuffle (bool): If True, returns the entire options list in randomized order.
+        min_value (Optional[int]): Lower bound (inclusive) for random integer generation.
+        max_value (Optional[int]): Upper bound (inclusive) for random integer generation.
+        weights (Optional[List[float]]): Optional relative weights/probabilities for each option.
+    """
+    import random
+    rng = random.SystemRandom()
+
+    try:
+        # 1. Numeric range generation if min_value / max_value are provided
+        if min_value is not None or max_value is not None:
+            if min_value is None or max_value is None:
+                return "Error: Both 'min_value' and 'max_value' must be provided for numeric range generation."
+            if min_value > max_value:
+                min_value, max_value = max_value, min_value
+            
+            count = max(1, count)
+            if count == 1:
+                val = rng.randint(min_value, max_value)
+                return f"🎲 Random Number ({min_value} to {max_value}): {val}"
+            else:
+                if with_replacement:
+                    vals = [rng.randint(min_value, max_value) for _ in range(count)]
+                else:
+                    pop_size = (max_value - min_value + 1)
+                    if count > pop_size:
+                        return f"Error: Cannot pick {count} unique integers from range [{min_value}, {max_value}] (only {pop_size} available)."
+                    vals = rng.sample(range(min_value, max_value + 1), k=count)
+                
+                return f"🎲 Random Numbers ({count} drawn from {min_value} to {max_value}):\n" + "\n".join([f"• {v}" for v in vals])
+
+        # 2. Parse options
+        items: List[str] = []
+        if isinstance(options, str):
+            options_str = options.strip()
+            if options_str.startswith("[") and options_str.endswith("]"):
+                try:
+                    parsed = json.loads(options_str)
+                    if isinstance(parsed, list):
+                        items = [str(x).strip() for x in parsed if str(x).strip()]
+                except Exception:
+                    pass
+            if not items:
+                items = [x.strip() for x in options_str.split(",") if x.strip()]
+        elif isinstance(options, list):
+            items = [str(x).strip() for x in options if str(x).strip()]
+
+        if not items:
+            return "Error: No options provided. Please specify a list of 'options' (e.g. ['Alice', 'Bob']) or a numeric range [min_value, max_value]."
+
+        # 3. Handle Shuffle Mode
+        if shuffle:
+            shuffled = list(items)
+            rng.shuffle(shuffled)
+            lines = [f"🔀 Shuffled Order ({len(shuffled)} items):"]
+            for idx, item in enumerate(shuffled, 1):
+                lines.append(f"{idx}. {item}")
+            return "\n".join(lines)
+
+        # 4. Handle Weighted Selection
+        if weights is not None:
+            if len(weights) != len(items):
+                return f"Error: 'weights' length ({len(weights)}) does not match 'options' length ({len(items)})."
+            if count == 1:
+                picked = rng.choices(items, weights=weights, k=1)[0]
+                return f"🎯 Weighted Selection: {picked}"
+            else:
+                picked = rng.choices(items, weights=weights, k=count)
+                lines = [f"🎯 Weighted Selection ({count} picks):"]
+                for idx, p in enumerate(picked, 1):
+                    lines.append(f"{idx}. {p}")
+                return "\n".join(lines)
+
+        # 5. Handle Standard Selection
+        count = max(1, count)
+        if count == 1:
+            picked = rng.choice(items)
+            return f"🎉 Selected: {picked}"
+        
+        if with_replacement:
+            picked = rng.choices(items, k=count)
+            lines = [f"🎉 Selected ({count} items with replacement):"]
+            for idx, p in enumerate(picked, 1):
+                lines.append(f"{idx}. {p}")
+            return "\n".join(lines)
+        else:
+            if count > len(items):
+                return f"Error: Requested {count} items without replacement, but only {len(items)} option(s) are available."
+            picked = rng.sample(items, k=count)
+            lines = [f"🎉 Selected ({count} distinct items):"]
+            for idx, p in enumerate(picked, 1):
+                lines.append(f"{idx}. {p}")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Error in random selection: {str(e)}"
+
+
 tools = [
     get_weather,
     web_search,
@@ -685,6 +807,7 @@ tools = [
     get_pantry_inventory,
     get_pantry_expiring,
     get_meal_plan,
+    random_picker,
 ]
 
 TOOL_METADATA = {
@@ -759,6 +882,12 @@ TOOL_METADATA = {
         "name": "get_meal_plan",
         "description": "Meal-planning snapshot: pantry stock + what to use before it spoils",
         "category": "Pantry"
+    },
+    "random_picker": {
+        "emoji": "🎲",
+        "name": "random_picker",
+        "description": "Cryptographically secure random selection, giveaways, list shuffling & dice rolls",
+        "category": "Utility"
     },
 }
 

@@ -31,6 +31,7 @@ from app.services.tools import (
     get_pantry_inventory,
     get_pantry_expiring,
     get_meal_plan,
+    random_picker,
 )
 from app.services.mcp import mcp_manager
 
@@ -241,7 +242,9 @@ async def call_model(state: AgentState, *, store: BaseStore):
             f"by the pantry, provide a shopping list of the missing ingredients.\n\n"
             f"REAL-TIME WEATHER & FORECASTS:\n"
             f"- 'get_weather': ALWAYS use this tool whenever the user asks about current weather, temperature, forecasts, precipitation, humidity, or wind for any city or location.\n"
-            f"- When presenting weather results to the user, format the response cleanly with emojis for every key metric (condition, temperature in °C and °F, humidity, wind, and forecast highlights).\n"
+            f"- When presenting weather results to the user, format the response cleanly with emojis for every key metric (condition, temperature in °C and °F, humidity, wind, and forecast highlights).\n\n"
+            f"RANDOM SELECTIONS, GIVEAWAYS & DECISIONS:\n"
+            f"- 'random_picker': ALWAYS use this tool whenever the user asks to pick a random winner, select from a list of options/entrants, roll dice, pick numbers in a range, shuffle a list, or make an unbiased random decision.\n"
             f"{memory_context}"
             f"{summary_context}"
         )
@@ -363,6 +366,7 @@ safe_tools = [
     get_pantry_inventory,
     get_pantry_expiring,
     get_meal_plan,
+    random_picker,
 ]
 sensitive_tools = [send_telegram_message]
 async def execute_safe_tools(state: AgentState):
