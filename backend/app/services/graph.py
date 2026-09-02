@@ -148,8 +148,8 @@ async def call_model(state: AgentState, *, store: BaseStore):
     Node that dynamically retrieves the requested LLM, binds tools, and invokes it.
     """
     messages = state["messages"]
-    provider = state.get("provider", "gemini")
-    model_name = state.get("model")
+    provider = state.get("provider") or settings.DEFAULT_PROVIDER
+    model_name = state.get("model") or None
 
     # Dynamic model retrieval
     llm = get_llm_model(provider=provider, model_name=model_name)
@@ -315,8 +315,8 @@ async def summarize_conversation(state: AgentState):
         )
         
     # Use the default model to summarize
-    provider = state.get("provider", "gemini")
-    model_name = state.get("model")
+    provider = state.get("provider") or settings.DEFAULT_PROVIDER
+    model_name = state.get("model") or None
     llm = get_llm_model(provider=provider, model_name=model_name)
     
     response = await llm.ainvoke([HumanMessage(content=prompt)])
