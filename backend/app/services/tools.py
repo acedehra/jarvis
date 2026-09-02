@@ -566,6 +566,50 @@ async def add_pantry_item(
 
 
 @tool
+async def update_pantry_item(
+    name: str,
+    quantity: Optional[float] = None,
+    unit: Optional[str] = None,
+    category: Optional[str] = None,
+    expiry: Optional[str] = None,
+) -> str:
+    """
+    Update or correct an existing pantry ingredient's quantity, unit, category, or expiry date.
+
+    Use this when the user adjusts stock, corrects an amount (e.g. 'update chicken thigh to 700g'),
+    changes the unit of measure, or sets an expiration date. This modifies the item in-place
+    and preserves all other fields (e.g. existing expiration dates are kept when adjusting quantity).
+    DO NOT delete or consume an item to adjust its quantity — use this tool instead.
+
+    Args:
+        name (str): The ingredient name to update (e.g. 'chicken thigh', 'tomatoes').
+        quantity (float, optional): The new exact quantity (sets stock directly; does not accumulate).
+        unit (str, optional): The unit of measure (e.g. 'g', 'kg', 'items', 'ml', 'clove', 'can').
+        category (str, optional): One of produce, dairy, meat, seafood, bakery, pantry, spice, frozen, condiment, other.
+        expiry (str, optional): ISO date (YYYY-MM-DD) for when the item expires.
+    """
+    from app.services.pantry import update_pantry_item as svc_update
+    try:
+        result = await svc_update(
+            name=name,
+            quantity=quantity,
+            unit=unit,
+            category=category,
+            expiry=expiry,
+        )
+        if not result.get("ok"):
+            return result.get("message", f"Failed to update pantry item '{name}'.")
+        expiry_info = f" | expiry {result['expiry']}" if result.get("expiry") else ""
+        return (
+            f"{result['message']}\n"
+            f"[UPDATED] {result['name']}: {result['quantity']} {result['unit']} "
+            f"(category: {result['category']}){expiry_info}"
+        )
+    except Exception as e:
+        return f"Error updating pantry item: {str(e)}"
+
+
+@tool
 async def consume_from_pantry(name: str, quantity: float = 1) -> str:
     """
     Consume a quantity of an ingredient from the pantry (e.g. when cooking a meal).
@@ -803,6 +847,7 @@ tools = [
     aggregate_records,
     manage_record,
     add_pantry_item,
+    update_pantry_item,
     consume_from_pantry,
     get_pantry_inventory,
     get_pantry_expiring,
@@ -857,6 +902,12 @@ TOOL_METADATA = {
         "emoji": "🥦",
         "name": "add_pantry_item",
         "description": "Add an ingredient to pantry inventory (auto-accumulates & normalizes names)",
+        "category": "Pantry"
+    },
+    "update_pantry_item": {
+        "emoji": "📝",
+        "name": "update_pantry_item",
+        "description": "Update or correct pantry item stock, unit, or expiry in-place",
         "category": "Pantry"
     },
     "consume_from_pantry": {

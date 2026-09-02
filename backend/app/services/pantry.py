@@ -223,6 +223,74 @@ async def add_pantry_item(
     }
 
 
+async def update_pantry_item(
+    name: str,
+    quantity: Optional[float] = None,
+    unit: Optional[str] = None,
+    category: Optional[str] = None,
+    expiry: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Updates an existing pantry ingredient's quantity, unit, category, or expiry.
+
+    Preserves all unspecified fields (e.g. updating quantity alone does not wipe the expiry date).
+    If duplicate records exist for the normalized name, extra records are consolidated.
+    """
+    normalized = normalize_name(name)
+    if not normalized:
+        return {"ok": False, "reason": "invalid_name", "message": "Ingredient name is empty."}
+
+    matches = await _find_records_by_normalized_name(normalized)
+    if not matches:
+        return {
+            "ok": False,
+            "reason": "not_found",
+            "name": normalized,
+            "message": f"'{normalized}' is not in the pantry.",
+        }
+
+    primary = matches[0]
+    data = dict(primary.get("data") or {})
+
+    # Consolidate duplicate records if any exist
+    if len(matches) > 1:
+        for extra in matches[1:]:
+            await delete_record(record_id=extra["id"], user_id=DEFAULT_USER)
+
+    if quantity is not None:
+        qty = _sanitize_quantity(quantity)
+        data["quantity"] = round(qty, 3)
+
+    if unit is not None:
+        unit_clean = unit.strip().lower().replace("pcs", "items").replace("piece", "item")
+        if unit_clean:
+            data["unit"] = unit_clean
+
+    if category is not None:
+        data["category"] = _sanitize_category(category)
+
+    if expiry is not None:
+        exp_clean = expiry.strip() if isinstance(expiry, str) else None
+        if exp_clean:
+            data["expiry"] = exp_clean
+        else:
+            data.pop("expiry", None)
+
+    await update_record_status(record_id=primary["id"], user_id=DEFAULT_USER, updates=data)
+
+    return {
+        "ok": True,
+        "action": "updated",
+        "name": normalized,
+        "quantity": data.get("quantity", 0),
+        "unit": data.get("unit", "items"),
+        "category": data.get("category", "other"),
+        "expiry": data.get("expiry"),
+        "record_id": primary["id"],
+        "message": f"Updated '{normalized}' in pantry (now {data.get('quantity')} {data.get('unit')}).",
+    }
+
+
 async def consume_from_pantry(name: str, quantity: float = 1) -> Dict[str, Any]:
     """
     Consumes a quantity of an ingredient (e.g. when cooking).
