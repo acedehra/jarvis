@@ -245,6 +245,39 @@ async def add_pantry(payload: RecordCreateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.patch("/pantry", tags=["Pantry"])
+@router.put("/pantry", tags=["Pantry"])
+async def update_pantry(payload: RecordUpdateRequest):
+    """
+    Updates an existing pantry item's quantity, unit, category, or expiry date in-place.
+    Preserves all unspecified fields (e.g. updating quantity alone does not wipe expiry).
+    Accepts {title: name, data: {quantity, unit, category, expiry}} or {data: {name, ...}}.
+    """
+    from app.services.pantry import update_pantry_item
+    try:
+        data = payload.data or {}
+        name = (payload.title or data.get("name") or payload.status or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Ingredient 'name' or 'title' is required.")
+        result = await update_pantry_item(
+            name=name,
+            quantity=data.get("quantity"),
+            unit=data.get("unit"),
+            category=data.get("category"),
+            expiry=data.get("expiry"),
+        )
+        if not result.get("ok"):
+            if result.get("reason") == "not_found":
+                raise HTTPException(status_code=404, detail=result.get("message"))
+            raise HTTPException(status_code=400, detail=result.get("message"))
+        return {"status": "success", "result": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating pantry item: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/pantry/consume", tags=["Pantry"])
 async def consume_pantry(payload: RecordUpdateRequest):
     """

@@ -27,6 +27,7 @@ from app.services.tools import (
     aggregate_records,
     manage_record,
     add_pantry_item,
+    update_pantry_item,
     consume_from_pantry,
     get_pantry_inventory,
     get_pantry_expiring,
@@ -233,8 +234,10 @@ async def call_model(state: AgentState, *, store: BaseStore):
             f"- 'manage_record': Use this to mark tasks as completed, update records, or delete them.\n\n"
             f"* IMPORTANT - PANTRY & GROCERY INVENTORY: You have dedicated pantry & meal-planning tools. "
             f"Use 'add_pantry_item' when the user logs groceries or stocks ingredients (auto-accumulates quantities and "
-            f"normalizes names) — always ask for / store an expiry date when the user knows it. Use 'get_pantry_inventory' "
-            f"or 'get_meal_plan' before any meal-planning / 'cook something with what I have' request to fetch the deterministic "
+            f"normalizes names) — always ask for / store an expiry date when the user knows it. "
+            f"Use 'update_pantry_item' when the user wants to adjust/correct stock, change the unit of measure, or edit expiry of an existing ingredient in-place. "
+            f"NEVER consume or delete an item to change its quantity or unit, as deleting an item erases its expiration date and history; always use 'update_pantry_item' instead. "
+            f"Use 'get_pantry_inventory' or 'get_meal_plan' before any meal-planning / 'cook something with what I have' request to fetch the deterministic "
             f"list of ingredients on hand (get_meal_plan also flags which items are expiring soonest), then suggest plausible "
             f"dishes using ONLY the ingredients in stock (plus sensible staples like salt, oil, pepper), and prioritize using up "
             f"near-expiring items first. Use 'get_pantry_expiring' when asked what's about to go bad or what to eat first. "
@@ -362,6 +365,7 @@ safe_tools = [
     aggregate_records,
     manage_record,
     add_pantry_item,
+    update_pantry_item,
     consume_from_pantry,
     get_pantry_inventory,
     get_pantry_expiring,
