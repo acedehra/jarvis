@@ -39,6 +39,7 @@ import { Package } from "lucide-react";
 import McpManagementModal from "./components/McpManagementModal";
 import TrackerModal from "./components/TrackerModal";
 import TelegramModal from "./components/TelegramModal";
+import ModelSelectorPopover, { ModelsInfo } from "./components/ModelSelectorPopover";
 import ApiKeyGate from "./components/ApiKeyGate";
 import { 
   getStoredApiKey, 
@@ -74,8 +75,8 @@ interface Thread {
   id: string;
   title: string;
   messages: Message[];
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
   timestamp: string;
 }
 
@@ -339,6 +340,8 @@ export default function Home() {
   const [mcpModalOpen, setMcpModalOpen] = useState(false);
   const [trackerModalOpen, setTrackerModalOpen] = useState(false);
   const [telegramModalOpen, setTelegramModalOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelsInfo, setModelsInfo] = useState<ModelsInfo | null>(null);
   const [memories, setMemories] = useState<{ key: string; fact: string }[]>([]);
 
 
@@ -360,6 +363,24 @@ export default function Home() {
       window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
     };
   }, []);
+
+  const fetchModelsInfo = useCallback(async () => {
+    try {
+      const res = await authFetch(`${getApiBaseUrl()}/api/models`);
+      if (res.ok) {
+        const data = await res.json();
+        setModelsInfo(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch models info:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchModelsInfo();
+    }
+  }, [isAuthenticated, fetchModelsInfo]);
 
   const fetchMemories = async () => {
     try {
@@ -425,8 +446,6 @@ export default function Home() {
             timestamp: new Date().toISOString(),
           },
         ],
-        provider: "gemini",
-        model: "gemini-2.5-flash",
         timestamp: new Date().toISOString()
       };
       setThreads([defaultThread]);
@@ -441,8 +460,8 @@ export default function Home() {
 
   const activeThread = threads.find(t => t.id === activeThreadId) || threads[0];
   const messages = activeThread?.messages || [];
-  const provider = activeThread?.provider || "gemini";
-  const model = activeThread?.model || "gemini-2.5-flash";
+  const provider = activeThread?.provider;
+  const model = activeThread?.model;
 
   const updateActiveThreadConfig = useCallback((updates: Partial<Pick<Thread, "provider" | "model" | "title" | "messages">>) => {
     const updated = threads.map(t => {
@@ -671,7 +690,12 @@ export default function Home() {
     setInput("");
     setIsThinking(true);
     if (ws && isConnected) {
-      ws.send(JSON.stringify({ text: userMsgText, provider: provider, model: model }));
+      const payload: { text: string; provider?: string; model?: string } = { text: userMsgText };
+      if (provider && model) {
+        payload.provider = provider;
+        payload.model = model;
+      }
+      ws.send(JSON.stringify(payload));
     } else {
       setIsThinking(false);
       setTimeout(() => {
@@ -689,8 +713,6 @@ export default function Home() {
       id: `thread-${Date.now()}`,
       title: "New Session",
       messages: [{ id: "welcome", sender: "bot", text: "Welcome back, Sir. J.A.R.V.I.S. is online. How may I assist you today?", timestamp: new Date().toISOString() }],
-      provider: "gemini",
-      model: "gemini-2.5-flash",
       timestamp: new Date().toISOString()
     };
     saveThreads([newThread, ...threads]);
@@ -1095,31 +1117,60 @@ export default function Home() {
           <div ref={chatEndRef} />
         </main>
 
-        <footer className="border-t border-slate-800/80 bg-slate-900/40 p-6 max-w-4xl mx-auto w-full">
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <select value={provider} onChange={(e) => updateActiveThreadConfig({ provider: e.target.value })} className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs">
-              {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <select value={model} onChange={(e) => updateActiveThreadConfig({ model: e.target.value })} className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs">
-              {PROVIDERS.find((p) => p.id === provider)?.models.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
+        <footer className="border-t border-slate-800/80 bg-slate-900/40 p-5 max-w-4xl mx-auto w-full">
           <form onSubmit={handleSendMessage} className="flex gap-2">
             <input 
               value={input} 
               onChange={(e) => setInput(e.target.value)} 
-              placeholder={pendingApproval ? "Authorize J.A.R.V.I.S. request below..." : "Message..."} 
+              placeholder={pendingApproval ? "Authorize J.A.R.V.I.S. request below..." : "Message J.A.R.V.I.S..."} 
               disabled={!!pendingApproval}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed" 
+              className="flex-1 bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-teal-500/50 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed text-slate-100 placeholder:text-slate-500" 
             />
             <button 
               type="submit" 
               disabled={!!pendingApproval || !input.trim()} 
-              className="p-3 bg-teal-600 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-3 bg-teal-600 hover:bg-teal-500 text-white rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-lg shadow-teal-900/20"
             >
               <Send className="w-4 h-4" />
             </button>
           </form>
+
+          {/* Model Status / Override Micro-Pill Toolbar */}
+          <div className="flex items-center justify-between mt-3 px-1 text-xs">
+            <div className="flex items-center gap-2">
+              {model ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-950/60 border border-teal-800/80 text-teal-300 text-[11px] shadow-sm">
+                  <Zap className="w-3 h-3 text-teal-400" />
+                  <span className="font-medium font-mono">{model}</span>
+                  <button
+                    type="button"
+                    onClick={() => updateActiveThreadConfig({ provider: undefined, model: undefined })}
+                    className="p-0.5 hover:text-white rounded-full hover:bg-teal-900/60 transition-colors ml-0.5 cursor-pointer"
+                    title="Clear override & return to system default"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setModelPickerOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/60 hover:bg-slate-800/80 border border-slate-800/80 hover:border-slate-700 text-slate-400 hover:text-slate-200 text-[11px] transition-all cursor-pointer group"
+                  title="Click to override LLM model for this session"
+                >
+                  <Sparkles className="w-3 h-3 text-teal-400 group-hover:scale-110 transition-transform" />
+                  <span>Default</span>
+                  <span className="text-slate-500 font-mono text-[10px]">
+                    ({modelsInfo?.default_model || "gemini-3.1-flash-lite"})
+                  </span>
+                  <ChevronDown className="w-3 h-3 text-slate-500 group-hover:text-slate-300 transition-colors" />
+                </button>
+              )}
+            </div>
+            <div className="text-[11px] text-slate-500 hidden sm:block">
+              Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700 text-[10px] text-slate-400 font-mono">Enter</kbd> to send
+            </div>
+          </div>
         </footer>
       </div>
 
@@ -1210,6 +1261,18 @@ export default function Home() {
         isOpen={telegramModalOpen}
         onClose={() => setTelegramModalOpen(false)}
         apiBaseUrl={getApiBaseUrl()}
+      />
+
+      {/* Model Selector Popover */}
+      <ModelSelectorPopover
+        isOpen={modelPickerOpen}
+        onClose={() => setModelPickerOpen(false)}
+        modelsInfo={modelsInfo}
+        selectedProvider={provider}
+        selectedModel={model}
+        onSelectModel={(prov, mdl) => {
+          updateActiveThreadConfig({ provider: prov, model: mdl });
+        }}
       />
     </div>
   );

@@ -413,6 +413,16 @@ async def verify_auth():
     }
 
 
+@app.get("/api/models", tags=["LLM"], dependencies=[Depends(get_api_key)])
+async def get_models():
+    """
+    Returns system default provider, system default model, and available providers/models
+    with their configured API key status.
+    """
+    from app.services.llm import get_available_models_info
+    return get_available_models_info()
+
+
 @app.get("/api/memories", tags=["Memories"], dependencies=[Depends(get_api_key)])
 async def get_memories(user_id: str = "default_user"):
     """
@@ -548,8 +558,8 @@ async def websocket_chat(
                 data = json.loads(raw_data)
                 if isinstance(data, dict):
                     message_text = data.get("text", raw_data)
-                    provider = data.get("provider", settings.DEFAULT_PROVIDER)
-                    model = data.get("model")
+                    provider = data.get("provider") or settings.DEFAULT_PROVIDER
+                    model = data.get("model") or None
             except json.JSONDecodeError:
                 # Fall back to treating it as plain text message
                 pass

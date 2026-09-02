@@ -267,6 +267,29 @@ class TestMainAppIntegration(unittest.TestCase):
             self.assertIn("components", schema)
             self.assertIn("securitySchemes", schema["components"])
 
+    def test_main_app_models_unauthorized(self):
+        """Verify /api/models rejects unauthenticated requests with 401."""
+        with patch.object(settings, "API_KEY_AUTH_ENABLED", True):
+            res = self.client.get("/api/models")
+            self.assertEqual(res.status_code, 401)
+
+    def test_main_app_models_authorized(self):
+        """Verify /api/models returns valid models payload with configured providers and defaults."""
+        with patch.object(settings, "API_KEY_AUTH_ENABLED", True):
+            res = self.client.get("/api/models", headers={"X-API-Key": self.test_key})
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertIn("default_provider", data)
+            self.assertIn("default_model", data)
+            self.assertIn("providers", data)
+            self.assertTrue(len(data["providers"]) > 0)
+            # Check structure of first provider
+            p0 = data["providers"][0]
+            self.assertIn("id", p0)
+            self.assertIn("name", p0)
+            self.assertIn("configured", p0)
+            self.assertIn("models", p0)
+
 
 if __name__ == "__main__":
     unittest.main()
