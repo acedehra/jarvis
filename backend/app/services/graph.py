@@ -31,6 +31,7 @@ from app.services.tools import (
     consume_from_pantry,
     get_pantry_inventory,
     get_pantry_expiring,
+    reset_pantry_alert,
     get_meal_plan,
     random_picker,
 )
@@ -240,7 +241,9 @@ async def call_model(state: AgentState, *, store: BaseStore):
             f"Use 'get_pantry_inventory' or 'get_meal_plan' before any meal-planning / 'cook something with what I have' request to fetch the deterministic "
             f"list of ingredients on hand (get_meal_plan also flags which items are expiring soonest), then suggest plausible "
             f"dishes using ONLY the ingredients in stock (plus sensible staples like salt, oil, pepper), and prioritize using up "
-            f"near-expiring items first. Use 'get_pantry_expiring' when asked what's about to go bad or what to eat first. "
+            f"Use 'get_pantry_expiring' when asked what's about to go bad or what to eat first (shows alert status for each item's specific expiry date). "
+            f"Note that updating an ingredient's expiry date automatically re-arms the alert for the new date. "
+            f"Use 'reset_pantry_alert' when the user explicitly asks to be alerted again or rearm reminders for an ingredient. "
             f"Use 'consume_from_pantry' to decrement ingredients when a meal is cooked. If the user wants a dish not fully covered "
             f"by the pantry, provide a shopping list of the missing ingredients.\n\n"
             f"REAL-TIME WEATHER & FORECASTS:\n"
@@ -369,6 +372,7 @@ safe_tools = [
     consume_from_pantry,
     get_pantry_inventory,
     get_pantry_expiring,
+    reset_pantry_alert,
     get_meal_plan,
     random_picker,
 ]

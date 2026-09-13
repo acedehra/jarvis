@@ -7,6 +7,9 @@ from app.services.pantry import (
     _sanitize_category,
     _days_until_expiry,
     update_pantry_item,
+    get_expiring_items,
+    mark_expiry_alerted,
+    reset_pantry_alert,
 )
 
 
@@ -172,6 +175,140 @@ class TestUpdatePantryTool(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Updated 'chicken thigh' in pantry", res)
         self.assertIn("700.0 g", res)
         self.assertIn("expiry 2026-09-10", res)
+
+
+class TestPantryAlerts(unittest.IsolatedAsyncioTestCase):
+    @patch("app.services.pantry._all_pantry_records", new_callable=AsyncMock)
+    async def test_alert_lifecycle_decoupled(self, mock_all):
+        """
+        Verify decoupled alert behavior:
+        - If last_alerted_expiry == expiry, item is alerted.
+        - If expiry changes and does not match last_alerted_expiry, alerted is False.
+        - If unalerted, alerted is False.
+        """
+        today = date.today()
+        exp_soon = (today + timedelta(days=1)).isoformat()
+        exp_old = (today + timedelta(days=-1)).isoformat()
+
+        mock_all.return_value = [
+            # Item 1: Alerted for its current expiry
+            {
+                "id": "item_1",
+                "title": "milk",
+                "data": {
+                    "name": "milk",
+                    "quantity": 1,
+                    "unit": "carton",
+                    "expiry": exp_soon,
+                    "last_alerted_expiry": exp_soon,
+                    "last_alerted_at": "2026-09-12T10:00:00Z",
+                },
+            },
+            # Item 2: Alerted for an OLD expiry date, but user updated expiry to exp_soon -> alert is rearmed!
+            {
+                "id": "item_2",
+                "title": "yogurt",
+                "data": {
+                    "name": "yogurt",
+                    "quantity": 2,
+                    "unit": "cups",
+                    "expiry": exp_soon,
+                    "last_alerted_expiry": exp_old,
+                    "last_alerted_at": "2026-09-10T10:00:00Z",
+                },
+            },
+            # Item 3: Brand new / never alerted
+            {
+                "id": "item_3",
+                "title": "spinach",
+                "data": {
+                    "name": "spinach",
+                    "quantity": 1,
+                    "unit": "bunch",
+                    "expiry": exp_soon,
+                },
+            },
+            # Item 4: Legacy alert format (expiry_alerted=True, no last_alerted_expiry)
+            {
+                "id": "item_4",
+                "title": "cheese",
+                "data": {
+                    "name": "cheese",
+                    "quantity": 1,
+                    "unit": "block",
+                    "expiry": exp_soon,
+                    "expiry_alerted": True,
+                },
+            },
+        ]
+
+        items = await get_expiring_items(within_days=3)
+        item_map = {i["name"]: i for i in items}
+
+        self.assertTrue(item_map["milk"]["alerted"])
+        self.assertEqual(item_map["milk"]["alert_status"], "alerted")
+
+        # Yogurt should NOT be considered alerted for the new expiry date!
+        self.assertFalse(item_map["yogurt"]["alerted"])
+        self.assertEqual(item_map["yogurt"]["alert_status"], "stale_alert")
+
+        # Spinach was never alerted
+        self.assertFalse(item_map["spinach"]["alerted"])
+        self.assertEqual(item_map["spinach"]["alert_status"], "pending")
+
+        # Cheese has legacy boolean
+        self.assertTrue(item_map["cheese"]["alerted"])
+        self.assertEqual(item_map["cheese"]["alert_status"], "alerted")
+
+    @patch("app.services.pantry.update_record_status", new_callable=AsyncMock)
+    async def test_mark_expiry_alerted_records_expiry(self, mock_update):
+        """mark_expiry_alerted must save last_alerted_expiry."""
+        mock_update.return_value = {"id": "rec_123", "data": {}}
+        await mark_expiry_alerted(record_id="rec_123", expiry="2026-09-20")
+
+        mock_update.assert_awaited_once()
+        _, kwargs = mock_update.call_args
+        updates = kwargs["updates"]
+        self.assertEqual(updates["last_alerted_expiry"], "2026-09-20")
+        self.assertTrue(updates["expiry_alerted"])
+        self.assertIsNotNone(updates["last_alerted_at"])
+
+    @patch("app.services.pantry.update_record_status", new_callable=AsyncMock)
+    @patch("app.services.pantry._find_records_by_normalized_name", new_callable=AsyncMock)
+    async def test_reset_pantry_alert(self, mock_find, mock_update):
+        """reset_pantry_alert clears last_alerted_expiry and expiry_alerted."""
+        mock_find.return_value = [
+            {"id": "rec_999", "title": "milk", "data": {"expiry_alerted": True, "last_alerted_expiry": "2026-09-15"}}
+        ]
+        result = await reset_pantry_alert(name="milk")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["action"], "alert_reset")
+
+        mock_update.assert_awaited_once_with(
+            record_id="rec_999",
+            user_id="default_user",
+            updates={
+                "expiry_alerted": False,
+                "expiry_alerted_at": None,
+                "last_alerted_expiry": None,
+                "last_alerted_at": None,
+            },
+        )
+
+
+class TestResetPantryAlertTool(unittest.IsolatedAsyncioTestCase):
+    @patch("app.services.pantry.reset_pantry_alert", new_callable=AsyncMock)
+    async def test_reset_tool_ainvoke(self, mock_svc_reset):
+        from app.services.tools import reset_pantry_alert as tool_reset
+        mock_svc_reset.return_value = {
+            "ok": True,
+            "action": "alert_reset",
+            "name": "milk",
+            "message": "Expiry alert reset for 'milk'. It will alert again when near expiry.",
+        }
+        res = await tool_reset.ainvoke({"name": "milk"})
+        self.assertIn("Expiry alert reset for 'milk'", res)
+        self.assertIn("✅", res)
 
 
 if __name__ == "__main__":
