@@ -452,6 +452,22 @@ async def get_expiring_items(
         normalized = normalize_name(str(raw_name))
         if not normalized:
             continue
+
+        # Decoupled alert evaluation:
+        # 1. Primary: last_alerted_expiry tracks the exact expiry date that was alerted.
+        # 2. Legacy fallback: data.get("expiry_alerted") when last_alerted_expiry is not recorded.
+        last_alerted_exp = data.get("last_alerted_expiry")
+        last_alerted_at = data.get("last_alerted_at") or data.get("expiry_alerted_at")
+        if last_alerted_exp is not None:
+            is_alerted = bool(expiry and str(last_alerted_exp).strip() == str(expiry).strip())
+            alert_status = "alerted" if is_alerted else "stale_alert"
+        elif bool(data.get("expiry_alerted")):
+            is_alerted = True
+            alert_status = "alerted"
+        else:
+            is_alerted = False
+            alert_status = "pending"
+
         item = by_name.setdefault(
             normalized,
             {
@@ -462,9 +478,18 @@ async def get_expiring_items(
                 "unit": (data.get("unit") or "items"),
                 "expiry": expiry,
                 "days_to_expiry": days,
-                "alerted": bool(data.get("expiry_alerted")),
+                "alerted": is_alerted,
+                "alert_status": alert_status,
+                "last_alerted_expiry": last_alerted_exp,
+                "last_alerted_at": last_alerted_at,
             },
         )
+        if is_alerted:
+            item["alerted"] = True
+            item["alert_status"] = "alerted"
+            item["last_alerted_expiry"] = last_alerted_exp
+            item["last_alerted_at"] = last_alerted_at
+
         item["quantity"] = round(item["quantity"] + _record_qty(record), 3)
 
     expiring = list(by_name.values())
@@ -474,17 +499,66 @@ async def get_expiring_items(
     return expiring
 
 
-async def mark_expiry_alerted(record_id: str, user_id: str = DEFAULT_USER) -> Optional[Dict[str, Any]]:
+async def mark_expiry_alerted(
+    record_id: str,
+    expiry: Optional[str] = None,
+    user_id: str = DEFAULT_USER,
+) -> Optional[Dict[str, Any]]:
     """
-    Marks a pantry record's expiry alert as dispatched so the worker does not re-alert.
-    Returns the updated record (with data.expiry_alerted = True) or None if not found.
+    Marks a pantry record's expiry alert as dispatched for a specific expiry date so the worker
+    does not re-alert for that date. Preserves decoupled behavior: if the expiry changes later,
+    last_alerted_expiry will no longer match, automatically re-arming the alert.
     """
     from datetime import datetime as _dt, timezone as _tz
+    now_iso = _dt.now(_tz.utc).isoformat()
     return await update_record_status(
         record_id=record_id,
         user_id=user_id,
-        updates={"expiry_alerted": True, "expiry_alerted_at": _dt.now(_tz.utc).isoformat()},
+        updates={
+            "expiry_alerted": True,
+            "expiry_alerted_at": now_iso,
+            "last_alerted_expiry": expiry,
+            "last_alerted_at": now_iso,
+        },
     )
+
+
+async def reset_pantry_alert(
+    name: str,
+    user_id: str = DEFAULT_USER,
+) -> Dict[str, Any]:
+    """
+    Resets/clears the expiry alert state for a pantry ingredient so an alert can fire again.
+    Clears last_alerted_expiry and expiry_alerted flags for all matching records.
+    """
+    normalized = normalize_name(name)
+    if not normalized:
+        return {"ok": False, "message": "Ingredient name is empty."}
+
+    matches = await _find_records_by_normalized_name(normalized)
+    if not matches:
+        return {
+            "ok": False,
+            "reason": "not_found",
+            "name": normalized,
+            "message": f"'{normalized}' is not in the pantry.",
+        }
+
+    updates = {
+        "expiry_alerted": False,
+        "expiry_alerted_at": None,
+        "last_alerted_expiry": None,
+        "last_alerted_at": None,
+    }
+    for record in matches:
+        await update_record_status(record_id=record["id"], user_id=user_id, updates=updates)
+
+    return {
+        "ok": True,
+        "action": "alert_reset",
+        "name": normalized,
+        "message": f"Expiry alert reset for '{normalized}'. It will alert again when near expiry.",
+    }
 
 
 async def get_meal_plan(limit: int = 6) -> Dict[str, Any]:

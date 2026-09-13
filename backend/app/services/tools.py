@@ -680,11 +680,38 @@ async def get_pantry_expiring(within_days: int = 3, include_expired: bool = True
         for item in items:
             d = item["days_to_expiry"]
             when = f"⛔ expired {abs(d)}d ago" if d < 0 else (f"expires today!" if d == 0 else f"expires in {d}d")
-            flag = " (already alerted)" if item.get("alerted") else ""
+            status = item.get("alert_status")
+            if status == "alerted":
+                flag = f" (already alerted for {item.get('expiry')})"
+            elif status == "stale_alert":
+                flag = f" (expiry updated to {item.get('expiry')}; new alert pending)"
+            else:
+                flag = " (alert pending)"
             lines.append(f"• {item['name']}: {item['quantity']} {item['unit']} — {when} ({item['expiry']}){flag}")
         return "\n".join(lines)
     except Exception as e:
         return f"Error getting expiring items: {str(e)}"
+
+
+@tool
+async def reset_pantry_alert(name: str) -> str:
+    """
+    Reset or re-arm the expiry alert for a pantry item.
+
+    Use this when the user asks to be reminded again about an expiring item, or wants to reset
+    the alert status for an ingredient so a new Telegram notification will fire.
+
+    Args:
+        name (str): The ingredient name (e.g. 'milk', 'chicken thigh').
+    """
+    from app.services.pantry import reset_pantry_alert as svc_reset
+    try:
+        res = await svc_reset(name=name)
+        if not res.get("ok"):
+            return f"Could not reset alert: {res.get('message', 'Unknown error')}"
+        return f"✅ {res.get('message')}"
+    except Exception as e:
+        return f"Error resetting pantry alert: {str(e)}"
 
 
 @tool
@@ -851,6 +878,7 @@ tools = [
     consume_from_pantry,
     get_pantry_inventory,
     get_pantry_expiring,
+    reset_pantry_alert,
     get_meal_plan,
     random_picker,
 ]
@@ -926,6 +954,12 @@ TOOL_METADATA = {
         "emoji": "🥫",
         "name": "get_pantry_expiring",
         "description": "List pantry items about to expire, ordered soonest-first",
+        "category": "Pantry"
+    },
+    "reset_pantry_alert": {
+        "emoji": "🔔",
+        "name": "reset_pantry_alert",
+        "description": "Reset or re-arm expiry alerts for a pantry ingredient",
         "category": "Pantry"
     },
     "get_meal_plan": {

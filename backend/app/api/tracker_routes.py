@@ -314,3 +314,28 @@ async def get_pantry_meal_plan(requested: int = Query(3, ge=1, le=8)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/pantry/reset-alert", tags=["Pantry"])
+async def reset_alert_endpoint(payload: RecordUpdateRequest):
+    """
+    Resets/clears the expiry alert state for a pantry ingredient so an alert can fire again.
+    Accepts {title: name} or {data: {name}} or {status: name}.
+    """
+    from app.services.pantry import reset_pantry_alert
+    try:
+        data = payload.data or {}
+        name = (payload.title or data.get("name") or payload.status or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Ingredient 'name' or 'title' is required.")
+        result = await reset_pantry_alert(name=name)
+        if not result.get("ok"):
+            if result.get("reason") == "not_found":
+                raise HTTPException(status_code=404, detail=result.get("message"))
+            raise HTTPException(status_code=400, detail=result.get("message"))
+        return {"status": "success", "result": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resetting pantry alert: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+

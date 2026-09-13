@@ -83,7 +83,7 @@ async def expiry_worker():
             try:
                 await send_telegram_message.ainvoke({"message": msg})
                 for item in stale:
-                    await mark_expiry_alerted(item["id"])
+                    await mark_expiry_alerted(item["id"], expiry=item.get("expiry"))
                 logger.info(f"🥫 Dispatched expiry alert for {len(stale)} item(s).")
             except Exception as e:
                 logger.error(f"❌ Failed to dispatch expiry alert: {e}")
