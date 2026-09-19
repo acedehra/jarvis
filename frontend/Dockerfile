@@ -1,5 +1,5 @@
-# Base image using Debian-based Bun (glibc avoids Alpine musl segfaults during Next.js Turbopack build)
-FROM oven/bun:1.3 AS base
+# Base image using Bun
+FROM oven/bun:1.4.2 AS base
 
 # Install dependencies
 FROM base AS deps
@@ -18,7 +18,7 @@ RUN bun run build
 # Run Next.js production server
 FROM base AS runner
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production 
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN groupadd --system --gid 1001 nodejs && \
