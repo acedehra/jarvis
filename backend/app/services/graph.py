@@ -398,6 +398,24 @@ async def execute_safe_tools(state: AgentState):
                 result = await tool_obj.ainvoke(tool_call["args"])
                 if isinstance(result, ToolMessage):
                     tool_messages.append(result)
+                elif isinstance(result, list):
+                    # Handle MCP content blocks cleanly (e.g. [{'type': 'text', 'text': '...'}])
+                    text_parts = []
+                    for item in result:
+                        if isinstance(item, dict) and "text" in item:
+                            text_parts.append(str(item["text"]))
+                        elif isinstance(item, str):
+                            text_parts.append(item)
+                        else:
+                            text_parts.append(str(item))
+                    formatted_content = "\n".join(text_parts) if text_parts else str(result)
+                    tool_messages.append(
+                        ToolMessage(
+                            content=formatted_content,
+                            name=tool_name,
+                            tool_call_id=tool_call["id"]
+                        )
+                    )
                 else:
                     tool_messages.append(
                         ToolMessage(
