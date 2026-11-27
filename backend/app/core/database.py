@@ -187,7 +187,7 @@ async def init_db():
     """
     global store_instance, _store_context_manager, saver_instance, _saver_context_manager, pool_instance
     
-    # 1. Initialize AsyncConnectionPool for raw SQL & Tracker queries
+    # 1. Initialize AsyncConnectionPool for raw SQL, Tracker & Meals queries
     if pool_instance is None:
         try:
             from psycopg_pool import AsyncConnectionPool
@@ -223,8 +223,13 @@ async def init_db():
                     """)
                     await conn.commit()
             logger.info("📋 Tracker database schema & indices verified (tracker_items).")
+
+            # Setup meals table
+            from app.services.meals import init_meals_table
+            await init_meals_table()
+            logger.info("🍽️  Meals database schema verified (meals).")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize AsyncConnectionPool or tracker tables: {e}", exc_info=True)
+            logger.error(f"❌ Failed to initialize AsyncConnectionPool or relational tables: {e}", exc_info=True)
             if pool_instance is not None:
                 try:
                     await pool_instance.close()

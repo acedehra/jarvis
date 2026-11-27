@@ -23,6 +23,8 @@ import {
   Menu,
   X,
   Brain,
+  Utensils,
+  Clock,
   Check,
   Copy,
   Server,
@@ -78,6 +80,15 @@ interface Thread {
   provider?: string;
   model?: string;
   timestamp: string;
+}
+
+interface MealIdea {
+  id: number;
+  name: string;
+  meal_type: string;
+  prep_time_minutes?: number | null;
+  ingredients: string[];
+  created_at: string;
 }
 
 const PROVIDERS = [
@@ -414,6 +425,82 @@ export default function Home() {
       }, 0);
     }
   }, [memoryModalOpen, isAuthenticated]);
+
+  const [mealsModalOpen, setMealsModalOpen] = useState(false);
+  const [meals, setMeals] = useState<MealIdea[]>([]);
+  const [mealName, setMealName] = useState("");
+  const [mealType, setMealType] = useState("dinner");
+  const [mealPrepTime, setMealPrepTime] = useState("");
+  const [mealIngredients, setMealIngredients] = useState("");
+  const [isSavingMeal, setIsSavingMeal] = useState(false);
+
+  const fetchMeals = async () => {
+    try {
+      const res = await authFetch(`${getApiBaseUrl()}/api/meals`);
+      if (res.ok) {
+        const data = await res.json();
+        setMeals(data);
+      }
+    } catch (e) {
+      console.error("Error fetching meals", e);
+    }
+  };
+
+  const handleAddMeal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mealName.trim() || isSavingMeal) return;
+    setIsSavingMeal(true);
+    try {
+      const ingredientsList = mealIngredients
+        .split(",")
+        .map((i) => i.trim())
+        .filter(Boolean);
+      const prepTimeNum = mealPrepTime.trim() ? parseInt(mealPrepTime.trim(), 10) : null;
+
+      const res = await authFetch(`${getApiBaseUrl()}/api/meals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: mealName.trim(),
+          meal_type: mealType,
+          prep_time_minutes: Number.isNaN(prepTimeNum) ? null : prepTimeNum,
+          ingredients: ingredientsList,
+        }),
+      });
+      if (res.ok) {
+        const created: MealIdea = await res.json();
+        setMeals((prev) => [created, ...prev]);
+        setMealName("");
+        setMealPrepTime("");
+        setMealIngredients("");
+      }
+    } catch (err) {
+      console.error("Error adding meal", err);
+    } finally {
+      setIsSavingMeal(false);
+    }
+  };
+
+  const handleDeleteMeal = async (mealId: number) => {
+    try {
+      const res = await authFetch(`${getApiBaseUrl()}/api/meals/${mealId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setMeals((prev) => prev.filter((m) => m.id !== mealId));
+      }
+    } catch (err) {
+      console.error("Error deleting meal", err);
+    }
+  };
+
+  useEffect(() => {
+    if (mealsModalOpen && isAuthenticated) {
+      setTimeout(() => {
+        fetchMeals();
+      }, 0);
+    }
+  }, [mealsModalOpen, isAuthenticated]);
   
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -742,6 +829,9 @@ export default function Home() {
     if (name === "read_workspace_file") return <FileText className="w-3.5 h-3.5 text-teal-400" />;
     if (name === "search_workspace_content") return <Search className="w-3.5 h-3.5 text-purple-400" />;
     if (name === "web_search") return <Search className="w-3.5 h-3.5 text-yellow-400" />;
+    if (name === "add_meal_idea" || name === "get_meal_ideas" || name === "delete_meal_idea") {
+      return <Utensils className="w-3.5 h-3.5 text-emerald-400" />;
+    }
     return <Terminal className="w-3.5 h-3.5 text-slate-400" />;
   };
 
@@ -830,6 +920,14 @@ export default function Home() {
             >
               <Send className="w-3.5 h-3.5" />
               <span>Telegram</span>
+            </button>
+            <button 
+              onClick={() => setMealsModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/40 text-xs text-emerald-400 font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="Manage your saved meal ideas"
+            >
+              <Utensils className="w-3.5 h-3.5" />
+              <span>Meals</span>
             </button>
             <button 
               onClick={() => setMemoryModalOpen(true)}
@@ -1274,6 +1372,138 @@ export default function Home() {
           updateActiveThreadConfig({ provider: prov, model: mdl });
         }}
       />
+
+      {/* Meal Ideas Modal */}
+      {mealsModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80">
+              <div className="flex items-center gap-2">
+                <Utensils className="w-5 h-5 text-emerald-400" />
+                <h2 className="text-sm font-bold tracking-tight text-slate-100">Meal Ideas</h2>
+              </div>
+              <button
+                onClick={() => setMealsModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800/50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              <form onSubmit={handleAddMeal} className="p-4 bg-slate-950/60 border border-slate-800/70 rounded-xl space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <input
+                    value={mealName}
+                    onChange={(e) => setMealName(e.target.value)}
+                    placeholder="Meal name (e.g. Chicken Tacos)"
+                    required
+                    className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-teal-500/50"
+                  />
+                  <select
+                    value={mealType}
+                    onChange={(e) => setMealType(e.target.value)}
+                    className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500/50"
+                  >
+                    <option value="breakfast">Breakfast</option>
+                    <option value="lunch">Lunch</option>
+                    <option value="dinner">Dinner</option>
+                    <option value="snack">Snack</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <input
+                    type="number"
+                    min="0"
+                    value={mealPrepTime}
+                    onChange={(e) => setMealPrepTime(e.target.value)}
+                    placeholder="Prep time (mins)"
+                    className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-teal-500/50"
+                  />
+                  <input
+                    value={mealIngredients}
+                    onChange={(e) => setMealIngredients(e.target.value)}
+                    placeholder="Ingredients (comma-separated)"
+                    className="sm:col-span-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-teal-500/50"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={!mealName.trim() || isSavingMeal}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-tr from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 disabled:opacity-40 rounded-lg text-xs font-semibold text-white transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{isSavingMeal ? "Saving..." : "Add Meal"}</span>
+                  </button>
+                </div>
+              </form>
+
+              {meals.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-slate-500 border border-dashed border-slate-800 rounded-xl">
+                  <Utensils className="w-8 h-8 text-slate-600 mb-2" />
+                  <span className="text-xs">No meal ideas saved yet.</span>
+                  <span className="text-[10px] text-slate-600 mt-1">
+                    Add one above or tell J.A.R.V.I.S. in chat to save a meal idea.
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {meals.map((meal) => (
+                    <div
+                      key={meal.id}
+                      className="flex items-start justify-between p-3.5 bg-slate-950/50 border border-slate-800/50 hover:border-slate-700/50 rounded-xl transition-all"
+                    >
+                      <div className="space-y-1.5 overflow-hidden flex-1 mr-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-slate-100">{meal.name}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {meal.meal_type}
+                          </span>
+                          {meal.prep_time_minutes != null && (
+                            <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                              <Clock className="w-3 h-3 text-slate-500" />
+                              {meal.prep_time_minutes}m
+                            </span>
+                          )}
+                        </div>
+                        {meal.ingredients.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {meal.ingredients.map((ing, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-slate-300"
+                              >
+                                {ing}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMeal(meal.id)}
+                        className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-900 transition-colors"
+                        title="Delete meal idea"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-800/80 flex justify-end">
+              <button
+                onClick={() => setMealsModalOpen(false)}
+                className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-xs font-semibold rounded-xl text-slate-200 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
