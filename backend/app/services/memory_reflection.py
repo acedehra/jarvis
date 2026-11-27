@@ -68,7 +68,7 @@ async def extract_memories_async(messages: list, user_id: str = "default_user"):
             f"{existing_memories_str}\n\n"
             "RULES:\n"
             "1. Only extract information that represents permanent user preferences, workflows, technical stacks, environment details, or name (e.g., 'user_name': 'Ace', 'tech_stack': 'Next.js, FastAPI', 'ide': 'Cursor').\n"
-            "2. DO NOT store transient details such as specific debugging sessions, generic questions, or temporary error messages.\n"
+            "2. DO NOT store transient details such as specific debugging sessions, generic questions, temporary error messages, or individual meal ideas saved via the meals database tools (though permanent dietary restrictions/allergies are fine).\n"
             "3. If the conversation updates or contradicts an existing memory, emit an 'upsert' action with the same key to overwrite it.\n"
             "4. If the user explicitly retracts a fact or says they no longer use/like a preference, emit a 'delete' action for that key.\n"
             "5. Keep the keys concise (snake_case) and the facts clear, helpful, and direct."

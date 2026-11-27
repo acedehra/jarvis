@@ -5,13 +5,14 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Response, status
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from app.core.config import settings
 from app.core.auth import init_api_key, APIKeyAuthMiddleware, verify_ws_auth, get_api_key, get_active_api_key
 from app.services.graph import graph
 from app.core.database import init_db, get_store, check_database_health
+from app.services.meals import Meal, MealCreate, create_meal, delete_meal, list_meals
 from app.services.memory_reflection import extract_memories_async
 
 logging.basicConfig(level=logging.INFO)
@@ -449,6 +450,55 @@ async def delete_memory(key: str, user_id: str = "default_user"):
     except Exception as e:
         logger.error(f"Error deleting memory '{key}': {e}")
         return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/meals", response_model=list[Meal], tags=["Meals"], dependencies=[Depends(get_api_key)])
+async def get_meals_endpoint(
+    meal_type: Optional[str] = None,
+    max_prep_time_minutes: Optional[int] = None,
+    ingredient: Optional[str] = None,
+):
+    """
+    Retrieve saved meal ideas from PostgreSQL, with optional filtering.
+    """
+    try:
+        return await list_meals(
+            meal_type=meal_type,
+            max_prep_time_minutes=max_prep_time_minutes,
+            ingredient=ingredient,
+        )
+    except Exception as e:
+        logger.error(f"Error fetching meals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/meals", response_model=Meal, tags=["Meals"], dependencies=[Depends(get_api_key)])
+async def create_meal_endpoint(payload: MealCreate):
+    """
+    Create a new meal idea in PostgreSQL.
+    """
+    try:
+        return await create_meal(payload)
+    except Exception as e:
+        logger.error(f"Error creating meal: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/meals/{meal_id}", tags=["Meals"], dependencies=[Depends(get_api_key)])
+async def delete_meal_endpoint(meal_id: int):
+    """
+    Delete a meal idea by ID.
+    """
+    try:
+        deleted = await delete_meal(meal_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Meal {meal_id} not found.")
+        return {"status": "success", "message": f"Meal '{deleted['name']}' deleted."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting meal '{meal_id}': {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/api/chat/sessions/{session_id}", tags=["Chat"], dependencies=[Depends(get_api_key)])

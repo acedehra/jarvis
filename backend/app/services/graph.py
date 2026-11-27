@@ -17,24 +17,7 @@ from langgraph.store.base import BaseStore
 from app.core.config import settings
 from app.core.database import get_store, get_checkpointer
 from app.services.llm import get_llm_model
-from app.services.tools import (
-    tools,
-    get_weather,
-    web_search,
-    send_telegram_message,
-    save_record,
-    query_records,
-    aggregate_records,
-    manage_record,
-    add_pantry_item,
-    update_pantry_item,
-    consume_from_pantry,
-    get_pantry_inventory,
-    get_pantry_expiring,
-    reset_pantry_alert,
-    get_meal_plan,
-    random_picker,
-)
+from app.services.tools import tools, safe_tools, sensitive_tools
 from app.services.mcp import mcp_manager
 
 
@@ -246,6 +229,9 @@ async def call_model(state: AgentState, *, store: BaseStore):
             f"Use 'reset_pantry_alert' when the user explicitly asks to be alerted again or rearm reminders for an ingredient. "
             f"Use 'consume_from_pantry' to decrement ingredients when a meal is cooked. If the user wants a dish not fully covered "
             f"by the pantry, provide a shopping list of the missing ingredients.\n\n"
+            f"SAVED MEAL IDEAS:\n"
+            f"- You have access to the user's saved meal ideas database via 'add_meal_idea', 'get_meal_ideas', and 'delete_meal_idea'.\n"
+            f"- Use these tools whenever the user wants to save a meal idea, browse/remove saved meals, or get meal suggestions (optionally cross-referencing with pantry inventory when helpful).\n\n"
             f"REAL-TIME WEATHER & FORECASTS:\n"
             f"- 'get_weather': ALWAYS use this tool whenever the user asks about current weather, temperature, forecasts, precipitation, humidity, or wind for any city or location.\n"
             f"- When presenting weather results to the user, format the response cleanly with emojis for every key metric (condition, temperature in °C and °F, humidity, wind, and forecast highlights).\n\n"
@@ -360,23 +346,6 @@ def should_continue(state: AgentState):
 
 
 # Set up the Langgraph state machine with safe/sensitive tool separation
-safe_tools = [
-    get_weather,
-    web_search,
-    save_record,
-    query_records,
-    aggregate_records,
-    manage_record,
-    add_pantry_item,
-    update_pantry_item,
-    consume_from_pantry,
-    get_pantry_inventory,
-    get_pantry_expiring,
-    reset_pantry_alert,
-    get_meal_plan,
-    random_picker,
-]
-sensitive_tools = [send_telegram_message]
 async def execute_safe_tools(state: AgentState):
     """
     Dynamically executes requested safe tools (static safe tools + registered MCP tools).

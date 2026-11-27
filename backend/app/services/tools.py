@@ -865,10 +865,104 @@ def random_picker(
         return f"Error in random selection: {str(e)}"
 
 
-tools = [
+@tool
+async def add_meal_idea(
+    name: str,
+    meal_type: str,
+    ingredients: list[str],
+    prep_time_minutes: Optional[int] = None,
+) -> str:
+    """
+    Save a new meal idea to the database so it can be suggested later.
+
+    Args:
+        name (str): Name of the meal (e.g. 'Chicken Stir-Fry', 'Avocado Toast').
+        meal_type (str): Category of the meal (e.g. 'breakfast', 'lunch', 'dinner', 'snack').
+        ingredients (list[str]): List of main ingredients (e.g. ['chicken breast', 'broccoli', 'soy sauce', 'rice']).
+        prep_time_minutes (Optional[int]): Estimated preparation/cooking time in minutes (e.g. 20).
+    """
+    from app.services.meals import MealCreate, create_meal
+
+    try:
+        meal = await create_meal(
+            MealCreate(
+                name=name,
+                meal_type=meal_type,
+                prep_time_minutes=prep_time_minutes,
+                ingredients=ingredients,
+            )
+        )
+        prep_str = f"{meal['prep_time_minutes']} mins" if meal["prep_time_minutes"] is not None else "unspecified"
+        ing_str = ", ".join(meal["ingredients"]) if meal["ingredients"] else "none listed"
+        return (
+            f"Saved meal idea #{meal['id']}: '{meal['name']}' "
+            f"(type: {meal['meal_type']}, prep time: {prep_str}, ingredients: {ing_str})."
+        )
+    except Exception as e:
+        return f"Error saving meal idea: {str(e)}"
+
+
+@tool
+async def get_meal_ideas(
+    meal_type: Optional[str] = None,
+    max_prep_time_minutes: Optional[int] = None,
+    ingredient: Optional[str] = None,
+) -> str:
+    """
+    Retrieve saved meal ideas from the database to browse or suggest meals to the user.
+    If specific filters return nothing or the user asks generally what to eat, call without filters to inspect all saved meals.
+
+    Args:
+        meal_type (Optional[str]): Filter by meal type (e.g. 'breakfast', 'lunch', 'dinner', 'snack').
+        max_prep_time_minutes (Optional[int]): Filter for meals taking at most this many minutes.
+        ingredient (Optional[str]): Filter for meals containing a specific ingredient (e.g. 'chicken').
+    """
+    from app.services.meals import list_meals
+
+    try:
+        meals = await list_meals(
+            meal_type=meal_type,
+            max_prep_time_minutes=max_prep_time_minutes,
+            ingredient=ingredient,
+        )
+        if not meals:
+            return "No saved meal ideas matched the query."
+
+        lines = []
+        for m in meals:
+            prep_str = f"{m['prep_time_minutes']} min" if m["prep_time_minutes"] is not None else "N/A"
+            ing_str = ", ".join(m["ingredients"]) if m["ingredients"] else "none listed"
+            lines.append(
+                f"- [ID {m['id']}] {m['name']} | Type: {m['meal_type']} | Prep: {prep_str} | Ingredients: {ing_str}"
+            )
+        return "Saved meal ideas:\n" + "\n".join(lines)
+    except Exception as e:
+        return f"Error fetching meal ideas: {str(e)}"
+
+
+@tool
+async def delete_meal_idea(meal_id: int) -> str:
+    """
+    Delete a saved meal idea from the database by its ID.
+    Use get_meal_ideas first if you do not know the meal's ID.
+
+    Args:
+        meal_id (int): The numeric ID of the meal idea to remove.
+    """
+    from app.services.meals import delete_meal
+
+    try:
+        deleted = await delete_meal(meal_id)
+        if not deleted:
+            return f"No meal idea found with ID {meal_id}."
+        return f"Deleted meal idea #{deleted['id']}: '{deleted['name']}'."
+    except Exception as e:
+        return f"Error deleting meal idea: {str(e)}"
+
+
+safe_tools = [
     get_weather,
     web_search,
-    send_telegram_message,
     save_record,
     query_records,
     aggregate_records,
@@ -880,8 +974,13 @@ tools = [
     get_pantry_expiring,
     reset_pantry_alert,
     get_meal_plan,
+    add_meal_idea,
+    get_meal_ideas,
+    delete_meal_idea,
     random_picker,
 ]
+sensitive_tools = [send_telegram_message]
+tools = [*safe_tools, *sensitive_tools]
 
 TOOL_METADATA = {
     "get_weather": {
@@ -968,6 +1067,24 @@ TOOL_METADATA = {
         "description": "Meal-planning snapshot: pantry stock + what to use before it spoils",
         "category": "Pantry"
     },
+    "add_meal_idea": {
+        "emoji": "🍲",
+        "name": "add_meal_idea",
+        "description": "Save a structured meal idea (name, meal type, prep time, ingredients)",
+        "category": "Meals"
+    },
+    "get_meal_ideas": {
+        "emoji": "📖",
+        "name": "get_meal_ideas",
+        "description": "Browse or filter saved meal ideas for meal suggestions",
+        "category": "Meals"
+    },
+    "delete_meal_idea": {
+        "emoji": "🗑️",
+        "name": "delete_meal_idea",
+        "description": "Delete a saved meal idea by ID",
+        "category": "Meals"
+    },
     "random_picker": {
         "emoji": "🎲",
         "name": "random_picker",
@@ -993,5 +1110,3 @@ def log_builtin_tools(custom_logger=None):
         })
         target_logger.info(f"  {meta['emoji']}  [Built-in] {t.name} - {meta['description']}")
     target_logger.info(f"✅ Loaded {len(tools)} built-in tool(s) successfully.")
-
-
